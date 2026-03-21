@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "icloudphotonator"
+version = "0.1.0"
+description = "Python backend for icloudphotonator"
+requires-python = ">=3.13"
+dependencies = [
+  "osxphotos",
+  "click",
+  "pydantic",
+  "websockets",
+  "aiohttp",
+]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+]
+
+[project.scripts]
+icloudphotonator = "icloudphotonator.__main__:main"
+
+[tool.uv]
+override-dependencies = [
+  "pyobjc-core==12.1",
+  "pyobjc-framework-applescriptkit==12.1",
+  "pyobjc-framework-applescriptobjc==12.1",
+  "pyobjc-framework-avfoundation==12.1",
+  "pyobjc-framework-cocoa==12.1",
+  "pyobjc-framework-coreaudio==12.1",
+  "pyobjc-framework-corelocation==12.1",
+  "pyobjc-framework-coremedia==12.1",
+  "pyobjc-framework-coreservices==12.1",
+  "pyobjc-framework-metal==12.1",
+  "pyobjc-framework-photos==12.1",
+  "pyobjc-framework-quartz==12.1",
+  "pyobjc-framework-scriptingbridge==12.1",
+  "pyobjc-framework-vision==12.1",
+]
+
+[tool.uv.extra-build-dependencies]
+pyobjc-framework-applescriptkit = ["setuptools<82"]
+pyobjc-framework-applescriptobjc = ["setuptools<82"]
+pyobjc-framework-avfoundation = ["setuptools<82"]
+pyobjc-framework-cocoa = ["setuptools<82"]
+pyobjc-core = ["setuptools<82"]
+pyobjc-framework-coreaudio = ["setuptools<82"]
+pyobjc-framework-coremedia = ["setuptools<82"]
+pyobjc-framework-coreservices = ["setuptools<82"]
+pyobjc-framework-metal = ["setuptools<82"]
+pyobjc-framework-photos = ["setuptools<82"]
+pyobjc-framework-quartz = ["setuptools<82"]
+pyobjc-framework-vision = ["setuptools<82"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
