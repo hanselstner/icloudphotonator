@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -39,13 +40,53 @@ def test_network_monitor_check_path(tmp_path: Path, exists: bool) -> None:
 @pytest.mark.asyncio
 async def test_file_operation_guard_copy_with_timeout(tmp_path: Path) -> None:
     src = tmp_path / "source.jpg"
-    dst = tmp_path / "copy.jpg"
+    dst = tmp_path / "nested" / "copy.jpg"
     src.write_bytes(b"image-bytes")
 
     guard = FileOperationGuard(timeout=1.0)
 
     assert await guard.copy_with_timeout(src, dst) is True
     assert dst.read_bytes() == b"image-bytes"
+
+
+@pytest.mark.asyncio
+async def test_file_operation_guard_cleans_up_partial_file_on_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    src = tmp_path / "source.jpg"
+    dst = tmp_path / "copy.jpg"
+    src.write_bytes(b"image-bytes")
+
+    guard = FileOperationGuard(timeout=1.0)
+
+    def broken_copy(source: Path, target: Path) -> None:
+        target.write_bytes(b"partial")
+        raise OSError("copy failed")
+
+    monkeypatch.setattr(guard, "_copy_file", broken_copy)
+
+    with pytest.raises(OSError, match="copy failed"):
+        await guard.copy_with_timeout(src, dst)
+
+    assert dst.exists() is False
+
+
+@pytest.mark.asyncio
+async def test_network_monitor_detects_path_becoming_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "network-share"
+    path.mkdir()
+    monitor = NetworkMonitor(path, check_interval=0.01)
+    disconnected = asyncio.Event()
+    states = iter([True, False, False])
+
+    monitor.on_disconnect(lambda: disconnected.set())
+    monkeypatch.setattr(monitor, "_check_path", lambda: next(states, False))
+
+    monitor.start()
+    try:
+        await asyncio.wait_for(disconnected.wait(), timeout=0.2)
+    finally:
+        monitor.stop()
+
+    assert monitor.is_available is False
 
 
 @pytest.mark.asyncio

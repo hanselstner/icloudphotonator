@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from uuid import uuid4
 
+from .resilience import FileOperationGuard, RetryPolicy, retry_with_policy
 from .scanner import FileInfo
+
+
+@dataclass(frozen=True)
+class StagingFailure:
+    file_info: FileInfo
+    staged_path: Path
+    error: str
 
 
 class StagingManager:
@@ -17,14 +25,19 @@ class StagingManager:
         self._staging_dir = Path(staging_dir) if staging_dir else Path(tempfile.gettempdir()) / "icloudphotonator-staging"
         self._staging_dir.mkdir(parents=True, exist_ok=True)
         self._max_staging_size_bytes = int(max(0.0, max_staging_size_gb) * 1024**3)
+        self._file_guard = FileOperationGuard(timeout=120.0)
+        self._retry_policy = RetryPolicy(max_retries=3, base_delay=1.0, max_delay=8.0, backoff_factor=2.0)
 
-    def stage_files(self, files: list[FileInfo], progress_callback=None) -> list[tuple[FileInfo, Path]]:
+    async def stage_files(
+        self, files: list[FileInfo], progress_callback=None
+    ) -> tuple[list[tuple[FileInfo, Path]], list[StagingFailure]]:
         """Copy files to local staging. Returns list of (original_info, staged_path).
 
         For local files, returns the original path (no copy needed).
         For network files, copies to staging_dir.
         """
         staged_files: list[tuple[FileInfo, Path]] = []
+        failures: list[StagingFailure] = []
         used_bytes, max_bytes = self.get_staging_usage()
         projected_usage = used_bytes
 
@@ -40,12 +53,22 @@ class StagingManager:
                 raise RuntimeError("Staging area is full; increase max_staging_size_gb or clean up staged files.")
 
             staged_path = self._staging_dir / f"{uuid4().hex}_{file_info.path.name}"
-            shutil.copy2(file_info.path, staged_path)
+            try:
+                await retry_with_policy(
+                    self._file_guard.copy_with_timeout,
+                    self._retry_policy,
+                    file_info.path,
+                    staged_path,
+                )
+            except (OSError, TimeoutError) as exc:
+                failures.append(StagingFailure(file_info=file_info, staged_path=staged_path, error=str(exc)))
+                continue
+
             staged_files.append((file_info, staged_path))
             if progress_callback is not None:
                 progress_callback(file_info, staged_path)
 
-        return staged_files
+        return staged_files, failures
 
     def cleanup_staged(self, staged_paths: list[Path]):
         """Remove staged files after successful import."""

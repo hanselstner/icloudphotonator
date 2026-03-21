@@ -11,6 +11,7 @@ from .db import Database
 from .dedup import DeduplicationEngine
 from .importer import PhotoImporter
 from .job import Job
+from .resilience import NetworkMonitor
 from .scanner import FileInfo, MediaType, Scanner
 from .staging import StagingManager
 from .state import FileStatus, JobState, transition
@@ -40,6 +41,8 @@ class ImportOrchestrator:
         self._progress_callbacks: list[Callable] = []
         self._log_callbacks: list[Callable[[str], None]] = []
         self._active_job: Job | None = None
+        self._network_monitor: NetworkMonitor | None = None
+        self._network_pause_requested = False
         self.logger = logging.getLogger("icloudphotonator.orchestrator")
 
     async def start_import(self, source_path: Path, job_id: str | None = None):
@@ -49,6 +52,14 @@ class ImportOrchestrator:
         self._paused.set()
         job = Job(self.db, job_id) if job_id else Job(self.db)
         self._active_job = job
+        self._stop_network_monitor()
+        self._network_pause_requested = False
+
+        if Scanner(source_path, compute_hashes=False)._is_network_path(source_path):
+            self._network_monitor = NetworkMonitor(source_path, check_interval=10)
+            self._network_monitor.on_disconnect(self._on_network_lost)
+            self._network_monitor.on_reconnect(self._on_network_restored)
+            self._network_monitor.start()
 
         try:
             is_new_job = job.source_path is None or job.stats["total"] == 0
@@ -86,6 +97,8 @@ class ImportOrchestrator:
                 self.db.update_job_state(job.job_id, JobState.ERROR)
                 self.db.log_action(job.job_id, None, "error", str(exc))
             raise
+        finally:
+            self._stop_network_monitor()
 
     def pause(self):
         """Pause the import."""
@@ -141,6 +154,26 @@ class ImportOrchestrator:
                 callback(message)
             except Exception:
                 self.logger.exception("Log callback failed")
+
+    def _on_network_lost(self) -> None:
+        if self._cancelled or self._active_job is None or self._network_pause_requested:
+            return
+        self._network_pause_requested = True
+        self._emit_log("Network connection lost, pausing import")
+        self.pause()
+
+    def _on_network_restored(self) -> None:
+        if self._cancelled or self._active_job is None or not self._network_pause_requested:
+            return
+        self._network_pause_requested = False
+        self._emit_log("Network connection restored, resuming import")
+        self.resume()
+
+    def _stop_network_monitor(self) -> None:
+        if self._network_monitor is not None:
+            self._network_monitor.stop()
+            self._network_monitor = None
+        self._network_pause_requested = False
 
     async def _wait_if_paused(self):
         """Block if paused."""
@@ -216,16 +249,31 @@ class ImportOrchestrator:
                 phase_label = "Staging vorbereitet." if next_state == JobState.STAGING else "Import gestartet."
                 self._emit_log(phase_label)
 
-            staged_pairs = await asyncio.to_thread(self.staging.stage_files, unique_files)
-            if job.state == JobState.STAGING:
+            row_by_path = {row["path"]: row for row in pending_rows}
+            staged_pairs, staging_failures = await self.staging.stage_files(unique_files)
+            self._mark_staging_failures(job, row_by_path, staging_failures)
+
+            if job.state == JobState.STAGING and staged_pairs:
                 self._transition_job(job, JobState.IMPORTING, "importing")
                 self._emit_log("Staging abgeschlossen. Import startet.")
 
-            row_by_path = {row["path"]: row for row in pending_rows}
+            if not staged_pairs:
+                self.throttle.report_failure(len(unique_files))
+                self._sync_job_counts(job)
+                self._notify_progress(self.get_job_stats(job.job_id))
+                if self._cancelled:
+                    break
+
+                await self._wait_if_paused()
+                if self.db.get_pending_files(job.job_id, limit=1):
+                    await asyncio.sleep(self.throttle.get_cooldown())
+                continue
+
+            staged_row_by_path = {str(file_info.path): row_by_path[str(file_info.path)] for file_info, _ in staged_pairs}
             staged_lookup = {str(staged_path): file_info for file_info, staged_path in staged_pairs}
             staged_paths = [staged_path for _, staged_path in staged_pairs]
-            for file_info in unique_files:
-                self.db.update_file_status(row_by_path[str(file_info.path)]["id"], FileStatus.IMPORTING)
+            for file_info, _ in staged_pairs:
+                self.db.update_file_status(staged_row_by_path[str(file_info.path)]["id"], FileStatus.IMPORTING)
 
             result = await asyncio.to_thread(
                 self.importer.import_batch,
@@ -238,7 +286,7 @@ class ImportOrchestrator:
             )
 
             cleanup_paths: list[Path] = []
-            processed_paths = self._apply_report(job, row_by_path, staged_lookup, result)
+            processed_paths = self._apply_report(job, staged_row_by_path, staged_lookup, result)
 
             for file_info, staged_path in staged_pairs:
                 if str(file_info.path) in processed_paths and staged_path != file_info.path:
@@ -247,10 +295,10 @@ class ImportOrchestrator:
             if cleanup_paths:
                 await asyncio.to_thread(self.staging.cleanup_staged, cleanup_paths)
 
-            if result.error_count > 0:
+            if staging_failures or result.error_count > 0:
                 self.throttle.report_failure(len(unique_files))
             else:
-                self.throttle.report_success(len(unique_files))
+                self.throttle.report_success(len(staged_pairs))
 
             self._sync_job_counts(job)
             self._notify_progress(self.get_job_stats(job.job_id))
@@ -315,6 +363,12 @@ class ImportOrchestrator:
             if row["path"] in duplicate_paths:
                 self.db.update_file_status(row["id"], FileStatus.SKIPPED_DUPLICATE)
                 self.db.log_action(job.job_id, row["id"], "duplicate", row["path"])
+
+    def _mark_staging_failures(self, job: Job, row_by_path: dict[str, dict], failures) -> None:
+        for failure in failures:
+            file_row = row_by_path[str(failure.file_info.path)]
+            self.db.update_file_status(file_row["id"], FileStatus.ERROR, failure.error)
+            self.db.log_action(job.job_id, file_row["id"], "staging_error", failure.error)
 
     def _apply_report(
         self,

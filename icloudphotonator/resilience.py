@@ -34,8 +34,12 @@ class NetworkMonitor:
     ) -> None:
         self._path = path
         self._check_interval = check_interval
-        self._on_disconnect = on_disconnect
-        self._on_reconnect = on_reconnect
+        self._disconnect_callbacks: list[Callable[[], Any]] = []
+        self._reconnect_callbacks: list[Callable[[], Any]] = []
+        if on_disconnect is not None:
+            self._disconnect_callbacks.append(on_disconnect)
+        if on_reconnect is not None:
+            self._reconnect_callbacks.append(on_reconnect)
         self._is_available = True
         self._running = False
         self._task: asyncio.Task[None] | None = None
@@ -43,6 +47,16 @@ class NetworkMonitor:
     @property
     def is_available(self) -> bool:
         return self._is_available
+
+    def on_disconnect(self, callback: Callable[[], Any]) -> None:
+        """Register a callback for disconnect events."""
+
+        self._disconnect_callbacks.append(callback)
+
+    def on_reconnect(self, callback: Callable[[], Any]) -> None:
+        """Register a callback for reconnect events."""
+
+        self._reconnect_callbacks.append(callback)
 
     def start(self) -> None:
         """Start monitoring in the background."""
@@ -68,21 +82,28 @@ class NetworkMonitor:
                     self._is_available = available
                     if available:
                         logger.info("Network path available: %s", self._path)
-                        if self._on_reconnect is not None:
-                            self._on_reconnect()
+                        await self._notify_callbacks(self._reconnect_callbacks)
                     else:
                         logger.warning("Network path unavailable: %s", self._path)
-                        if self._on_disconnect is not None:
-                            self._on_disconnect()
+                        await self._notify_callbacks(self._disconnect_callbacks)
                 await asyncio.sleep(self._check_interval)
         except asyncio.CancelledError:
             raise
+
+    async def _notify_callbacks(self, callbacks: list[Callable[[], Any]]) -> None:
+        for callback in list(callbacks):
+            try:
+                result = callback()
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception:  # noqa: BLE001
+                logger.exception("Network monitor callback failed for %s", self._path)
 
     def _check_path(self) -> bool:
         """Check if the network path is accessible."""
 
         try:
-            os.listdir(self._path)
+            os.stat(self._path)
         except (OSError, PermissionError):
             return False
         return True
@@ -132,6 +153,7 @@ class FileOperationGuard:
     async def copy_with_timeout(self, src: Path, dst: Path) -> bool:
         """Copy a file with timeout protection."""
 
+        dst.parent.mkdir(parents=True, exist_ok=True)
         try:
             loop = asyncio.get_running_loop()
             await asyncio.wait_for(
@@ -139,18 +161,21 @@ class FileOperationGuard:
                 timeout=self.timeout,
             )
             return True
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             logger.error("File copy timed out after %ss: %s", self.timeout, src)
             self._cleanup_partial(dst)
-            return False
+            raise TimeoutError(f"File copy timed out after {self.timeout}s: {src}") from exc
         except OSError as exc:
             logger.error("File copy failed: %s → %s: %s", src, dst, exc)
             self._cleanup_partial(dst)
-            return False
+            raise
 
     @staticmethod
     def _copy_file(src: Path, dst: Path) -> None:
+        dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(src), str(dst))
+        if src.stat().st_size != dst.stat().st_size:
+            raise OSError(f"Copied file size mismatch for {src}")
 
     @staticmethod
     def _cleanup_partial(dst: Path) -> None:
