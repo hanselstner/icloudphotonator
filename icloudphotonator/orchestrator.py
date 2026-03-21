@@ -11,6 +11,7 @@ from .db import Database
 from .dedup import DeduplicationEngine
 from .importer import PhotoImporter
 from .job import Job
+from .persistence import DEFAULT_ACTIVE_JOB_PATH, clear_active_job, save_active_job
 from .resilience import NetworkMonitor
 from .scanner import FileInfo, MediaType, Scanner
 from .staging import StagingManager
@@ -26,12 +27,27 @@ REMAINING_FILE_STATUSES = {
     FileStatus.RETRYING.value,
 }
 
+RECOVERABLE_FILE_STATUSES = {
+    FileStatus.SCANNING.value,
+    FileStatus.STAGED.value,
+    FileStatus.IMPORTING.value,
+    FileStatus.RETRYING.value,
+    FileStatus.ERROR.value,
+}
+
 
 class ImportOrchestrator:
     """Orchestrates the full import workflow."""
 
-    def __init__(self, db_path: Path, staging_dir: Path | None = None):
-        self.db = Database(db_path)
+    def __init__(
+        self,
+        db_path: Path,
+        staging_dir: Path | None = None,
+        active_job_path: Path | None = None,
+    ):
+        self._db_path = Path(db_path)
+        self._active_job_path = Path(active_job_path) if active_job_path else DEFAULT_ACTIVE_JOB_PATH
+        self.db = Database(self._db_path)
         self.throttle = ThrottleController()
         self.staging = StagingManager(staging_dir)
         self.importer = PhotoImporter()
@@ -54,6 +70,7 @@ class ImportOrchestrator:
         self._active_job = job
         self._stop_network_monitor()
         self._network_pause_requested = False
+        save_active_job(job.job_id, job.source_path or source_path, self._db_path, self._active_job_path)
 
         if Scanner(source_path, compute_hashes=False)._is_network_path(source_path):
             self._network_monitor = NetworkMonitor(source_path, check_interval=10)
@@ -62,15 +79,13 @@ class ImportOrchestrator:
             self._network_monitor.start()
 
         try:
-            is_new_job = job.source_path is None or job.stats["total"] == 0
-            if is_new_job:
+            if job_id is not None:
+                await self._resume_existing_job(job, source_path)
+            else:
                 if job.state == JobState.IDLE:
                     job.start(source_path)
                     self._emit_log(f"Scanne Quelle: {source_path}")
                 await self._scan_phase(job, source_path)
-            elif job.state == JobState.PAUSED:
-                job.resume()
-                self._emit_log("Import wird fortgesetzt.")
 
             if not self._cancelled and job.state != JobState.CANCELLED:
                 await self._import_phase(job)
@@ -99,6 +114,41 @@ class ImportOrchestrator:
             raise
         finally:
             self._stop_network_monitor()
+            if self._active_job is not None:
+                if self._active_job.state in {JobState.COMPLETED, JobState.CANCELLED}:
+                    clear_active_job(self._active_job_path)
+                else:
+                    save_active_job(
+                        self._active_job.job_id,
+                        self._active_job.source_path or source_path,
+                        self._db_path,
+                        self._active_job_path,
+                    )
+
+    async def _resume_existing_job(self, job: Job, source_path: Path) -> None:
+        if job.source_path is None:
+            self.db.update_job_source_path(job.job_id, source_path)
+
+        if job.state == JobState.PAUSED:
+            job.resume()
+            self._emit_log("Import wird fortgesetzt.")
+
+        if job.stats["total"] == 0:
+            self._set_job_state(job, JobState.SCANNING, "resume_scan", str(source_path))
+            self._emit_log(f"Scanne Quelle: {source_path}")
+            await self._scan_phase(job, source_path)
+            return
+
+        recovered_files = self._recover_file_statuses(job.job_id)
+        if recovered_files:
+            self._emit_log(f"Stelle {recovered_files} Dateien für die Wiederaufnahme erneut an.")
+
+        if self.db.get_pending_files(job.job_id, limit=1):
+            self._set_job_state(job, JobState.DEDUPLICATING, "resume_pending", "resume existing files")
+            return
+
+        if job.state != JobState.VERIFYING:
+            self._set_job_state(job, JobState.VERIFYING, "resume_verify", "resume verification")
 
     def pause(self):
         """Pause the import."""
@@ -345,6 +395,12 @@ class ImportOrchestrator:
         self.db.update_job_state(job.job_id, next_state)
         self.db.log_action(job.job_id, None, action, details or target.value)
 
+    def _set_job_state(self, job: Job, target: JobState, action: str, details: str | None = None) -> None:
+        if job.state == target:
+            return
+        self.db.update_job_state(job.job_id, target)
+        self.db.log_action(job.job_id, None, action, details or target.value)
+
     def _deduplicate_pending_files(self, job: Job, dedup: DeduplicationEngine) -> None:
         pending_rows = self._get_pending_rows(job.job_id)
         unique_files, duplicate_files = dedup.check_duplicates([self._row_to_file_info(row) for row in pending_rows])
@@ -443,6 +499,22 @@ class ImportOrchestrator:
             stats[FileStatus.SKIPPED_DUPLICATE.value] + stats[FileStatus.SKIPPED_ERROR.value],
             stats[FileStatus.ERROR.value],
         )
+
+    def _recover_file_statuses(self, job_id: str) -> int:
+        placeholders = ", ".join("?" for _ in RECOVERABLE_FILE_STATUSES)
+        with self.db.transaction() as connection:
+            cursor = connection.execute(
+                f"""
+                UPDATE files
+                SET status = ?, error_message = ?, imported_at = ?
+                WHERE job_id = ? AND status IN ({placeholders})
+                """,
+                (FileStatus.PENDING.value, None, None, job_id, *sorted(RECOVERABLE_FILE_STATUSES)),
+            )
+        recovered = int(cursor.rowcount or 0)
+        if recovered:
+            self.db.log_action(job_id, None, "resume_requeue", f"count={recovered}")
+        return recovered
 
     def _get_pending_rows(self, job_id: str) -> list[dict]:
         rows = self.db._connection.execute(
