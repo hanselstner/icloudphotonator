@@ -6,11 +6,13 @@ from pathlib import Path
 try:
     import tkinter as tk
     from tkinter import filedialog
+    from tkinter import messagebox
 
     import customtkinter as ctk
 except ModuleNotFoundError as exc:
     tk = None
     filedialog = None
+    messagebox = None
     ctk = None
     _UI_IMPORT_ERROR = exc
 else:
@@ -32,7 +34,7 @@ def _raise_missing_ui_support() -> None:
     raise RuntimeError(message) from _UI_IMPORT_ERROR
 
 
-if ctk is None or tk is None or filedialog is None:
+if ctk is None or tk is None or filedialog is None or messagebox is None:
 
     class StatsCard:
         """Placeholder when Tk support is unavailable."""
@@ -125,6 +127,7 @@ else:
             self._build_ui()
             self._set_status("⏸ Bereit")
             self.add_log("Anwendung bereit.")
+            self.after(0, self._check_for_incomplete_jobs)
 
         def _build_ui(self) -> None:
             self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -217,6 +220,38 @@ else:
         def _on_start(self) -> None:
             if not self._source_path:
                 return
+            self._start_import_run()
+
+        def _check_for_incomplete_jobs(self) -> None:
+            incomplete_jobs = [job for job in self._bridge.get_incomplete_jobs() if job.get("source_path")]
+            if not incomplete_jobs:
+                return
+
+            job = incomplete_jobs[0]
+            stats = job.get("stats", {})
+            source_path = str(job.get("source_path", "Unbekannter Ordner"))
+            imported = stats.get("imported", 0)
+            total = stats.get("total", 0)
+            should_resume = messagebox.askyesno(
+                APP_TITLE,
+                (
+                    f"Unvollständiger Import gefunden:\n{source_path}\n\n"
+                    f"Fortschritt: {imported}/{total} Dateien importiert.\n\n"
+                    "Möchtest du den Import fortsetzen?"
+                ),
+                icon="question",
+            )
+            if not should_resume:
+                return
+
+            self._source_path = Path(source_path)
+            self._set_path_display(source_path)
+            self.add_log(f"Setze gespeicherten Import fort: {source_path}")
+            self._start_import_run(job_id=job["id"])
+
+        def _start_import_run(self, job_id: str | None = None) -> None:
+            if not self._source_path:
+                return
             self._is_running = True
             self._is_paused = False
             self.start_btn.configure(state="disabled")
@@ -224,6 +259,10 @@ else:
             self.stop_btn.configure(state="normal")
             self.browse_btn.configure(state="disabled")
             self._set_status("🔄 Scanne...", indeterminate=True)
+            if job_id:
+                self.add_log("Import wird fortgesetzt...")
+                self._bridge.resume_import(job_id)
+                return
             self.add_log("Import gestartet...")
             self._bridge.start_import(self._source_path)
 

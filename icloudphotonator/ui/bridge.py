@@ -6,15 +6,29 @@ import threading
 from pathlib import Path
 from typing import Callable
 
+from icloudphotonator.db import Database
+from icloudphotonator.persistence import (
+    DEFAULT_ACTIVE_JOB_PATH,
+    DEFAULT_DB_PATH,
+    clear_active_job,
+    load_active_job,
+)
+
 logger = logging.getLogger("icloudphotonator.bridge")
 
 
 class BackendBridge:
     """Bridge the Tk UI on the main thread to a background orchestrator."""
 
-    def __init__(self, db_path: Path | None = None, staging_dir: Path | None = None):
-        self._db_path = db_path or (Path.home() / ".icloudphotonator" / "icloudphotonator.db")
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        staging_dir: Path | None = None,
+        active_job_path: Path | None = None,
+    ):
+        self._db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self._staging_dir = staging_dir
+        self._active_job_path = Path(active_job_path) if active_job_path else DEFAULT_ACTIVE_JOB_PATH
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._orchestrator: object | None = None
@@ -34,8 +48,51 @@ class BackendBridge:
         if self._thread and self._thread.is_alive():
             self._emit_log("Ein Import läuft bereits.")
             return
-        self._thread = threading.Thread(target=self._run_import, args=(source_path,), daemon=True)
+        self._thread = threading.Thread(
+            target=self._run_import,
+            args=(source_path, None),
+            daemon=True,
+        )
         self._thread.start()
+
+    def resume_import(self, job_id: str) -> None:
+        """Resume an existing import in a dedicated background thread."""
+        if self._thread and self._thread.is_alive():
+            self._emit_log("Ein Import läuft bereits.")
+            return
+
+        db = Database(self._db_path)
+        job = db.get_job(job_id)
+        if not job or not job.get("source_path"):
+            clear_active_job(self._active_job_path)
+            self._emit_error("Der gespeicherte Import konnte nicht gefunden werden.")
+            return
+
+        self._thread = threading.Thread(
+            target=self._run_import,
+            args=(Path(job["source_path"]), job_id),
+            daemon=True,
+        )
+        self._thread.start()
+
+    def get_incomplete_jobs(self) -> list[dict]:
+        """Return incomplete jobs, preferring the last active job if present."""
+        jobs = Database(self._db_path).get_incomplete_jobs()
+        active_job = load_active_job(self._active_job_path)
+        if not active_job:
+            return jobs
+
+        active_job_id = active_job.get("job_id")
+        active_db_path = active_job.get("db_path")
+        if active_db_path and Path(active_db_path).resolve(strict=False) != self._db_path.resolve(strict=False):
+            clear_active_job(self._active_job_path)
+            return jobs
+
+        if not any(job["id"] == active_job_id for job in jobs):
+            clear_active_job(self._active_job_path)
+            return jobs
+
+        return sorted(jobs, key=lambda job: job["id"] != active_job_id)
 
     def pause(self) -> None:
         self._dispatch_to_orchestrator("pause")
@@ -73,7 +130,7 @@ class BackendBridge:
         if callable(registrar):
             registrar(callback)
 
-    def _run_import(self, source_path: Path) -> None:
+    def _run_import(self, source_path: Path, job_id: str | None = None) -> None:
         """Import worker executed on a background thread."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -82,7 +139,11 @@ class BackendBridge:
 
             from icloudphotonator.orchestrator import ImportOrchestrator
 
-            orchestrator = ImportOrchestrator(self._db_path, self._staging_dir)
+            orchestrator = ImportOrchestrator(
+                self._db_path,
+                self._staging_dir,
+                active_job_path=self._active_job_path,
+            )
             self._orchestrator = orchestrator
             self._register_callback(orchestrator, "on_progress", self._on_progress)
             self._register_callback(orchestrator, "on_log", self._on_log)
@@ -92,7 +153,7 @@ class BackendBridge:
                 raise AttributeError("ImportOrchestrator.start_import() ist nicht verfügbar.")
 
             self._emit_log(f"Starte Import für: {source_path}")
-            result = start_import(source_path)
+            result = start_import(source_path, job_id=job_id)
             if asyncio.iscoroutine(result):
                 result = self._loop.run_until_complete(result)
 

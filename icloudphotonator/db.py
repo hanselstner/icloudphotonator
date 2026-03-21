@@ -61,6 +61,23 @@ class Database:
         ).fetchone()
         return dict(row) if row else None
 
+    def get_incomplete_jobs(self) -> list[dict[str, Any]]:
+        rows = self._connection.execute(
+            """
+            SELECT id, source_path, state, created_at, updated_at
+            FROM jobs
+            WHERE state NOT IN (?, ?)
+            ORDER BY updated_at DESC, created_at DESC
+            """,
+            (JobState.COMPLETED.value, JobState.CANCELLED.value),
+        ).fetchall()
+        jobs: list[dict[str, Any]] = []
+        for row in rows:
+            job = dict(row)
+            job["stats"] = self.get_job_stats(job["id"])
+            jobs.append(job)
+        return jobs
+
     def update_job_state(self, job_id: str, state: JobState | str) -> None:
         state_value = state.value if isinstance(state, JobState) else state
         with self.transaction() as connection:

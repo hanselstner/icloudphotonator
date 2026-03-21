@@ -3,7 +3,7 @@ from click.testing import CliRunner
 from icloudphotonator.__main__ import main
 
 
-def test_cli_help_lists_gui_and_import_commands() -> None:
+def test_help_works() -> None:
     result = CliRunner().invoke(main, ["--help"])
 
     assert result.exit_code == 0
@@ -11,11 +11,20 @@ def test_cli_help_lists_gui_and_import_commands() -> None:
     assert "import-photos" in result.output
 
 
-def test_cli_version_option() -> None:
+def test_version_works() -> None:
     result = CliRunner().invoke(main, ["--version"])
 
     assert result.exit_code == 0
     assert "0.1.0" in result.output
+
+
+def test_import_photos_help_shows_expected_options() -> None:
+    result = CliRunner().invoke(main, ["import-photos", "--help"])
+
+    assert result.exit_code == 0
+    assert "SOURCE" in result.output
+    assert "--staging-dir" in result.output
+    assert "--db-path" in result.output
 
 
 def test_ui_module_imports() -> None:

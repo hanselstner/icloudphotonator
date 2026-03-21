@@ -54,6 +54,7 @@ VALID_TRANSITIONS: dict[JobState, set[JobState]] = {
         JobState.DEDUPLICATING,
         JobState.STAGING,
         JobState.IMPORTING,
+        JobState.VERIFYING,
     },
     JobState.COMPLETED: set(),
     JobState.ERROR: {JobState.IDLE, JobState.SCANNING},

@@ -5,8 +5,9 @@ import pytest
 from icloudphotonator.db import Database
 from icloudphotonator.importer import PhotoImporter
 from icloudphotonator.orchestrator import ImportOrchestrator
+from icloudphotonator.persistence import load_active_job
 from icloudphotonator.staging import StagingManager
-from icloudphotonator.state import JobState
+from icloudphotonator.state import FileStatus, JobState
 from icloudphotonator.throttle import ThrottleController
 
 
@@ -120,3 +121,90 @@ async def test_start_import_skips_network_monitor_for_local_source(
     await orchestrator.start_import(tmp_path / "local-source")
 
     assert StubNetworkMonitor.instances == []
+
+
+@pytest.mark.asyncio
+async def test_resume_existing_job_requeues_files_skips_scan_and_clears_active_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        (source_path / name).write_bytes(b"image-bytes")
+
+    db = Database(tmp_path / "jobs.db")
+    job_id = db.create_job(source_path, {})
+    db.update_job_state(job_id, JobState.ERROR)
+    error_id = db.add_file(job_id, source_path / "a.jpg", 1, "hash-a", "image")
+    importing_id = db.add_file(job_id, source_path / "b.jpg", 1, "hash-b", "image")
+    pending_id = db.add_file(job_id, source_path / "c.jpg", 1, "hash-c", "image")
+    db.update_file_status(error_id, FileStatus.ERROR, error_message="failed")
+    db.update_file_status(importing_id, FileStatus.IMPORTING)
+    db.update_file_status(pending_id, FileStatus.PENDING)
+
+    active_job_path = tmp_path / "active_job.json"
+    seen_pending: dict[str, list[str]] = {}
+
+    async def fail_scan(self, job, source_path: Path) -> None:
+        raise AssertionError("scan phase should be skipped for persisted jobs")
+
+    async def complete_import(self, job) -> None:
+        pending_rows = self.db.get_pending_files(job.job_id, limit=10)
+        seen_pending["statuses"] = [row["status"] for row in pending_rows]
+        seen_pending["paths"] = [Path(row["path"]).name for row in pending_rows]
+        active_payload = load_active_job(active_job_path)
+        assert active_payload is not None
+        assert active_payload["job_id"] == job.job_id
+        for row in pending_rows:
+            self.db.update_file_status(row["id"], FileStatus.IMPORTED)
+        self.db.update_job_state(job.job_id, JobState.VERIFYING)
+
+    monkeypatch.setattr(ImportOrchestrator, "_scan_phase", fail_scan)
+    monkeypatch.setattr(ImportOrchestrator, "_import_phase", complete_import)
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db", active_job_path=active_job_path)
+
+    resumed_job_id = await orchestrator.start_import(source_path, job_id=job_id)
+
+    assert resumed_job_id == job_id
+    assert seen_pending["statuses"] == [FileStatus.PENDING.value, FileStatus.PENDING.value, FileStatus.PENDING.value]
+    assert seen_pending["paths"] == ["a.jpg", "b.jpg", "c.jpg"]
+    assert db.get_job(job_id)["state"] == JobState.COMPLETED.value
+    assert db.get_job_stats(job_id)[FileStatus.IMPORTED.value] == 3
+    assert active_job_path.exists() is False
+
+
+@pytest.mark.asyncio
+async def test_resume_existing_job_scans_when_no_files_exist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    db = Database(tmp_path / "jobs.db")
+    job_id = db.create_job(source_path, {})
+    db.update_job_state(job_id, JobState.ERROR)
+
+    calls: dict[str, int] = {"scan": 0, "import": 0}
+
+    async def complete_scan(self, job, source_path: Path) -> None:
+        calls["scan"] += 1
+        self.db.add_file(job.job_id, source_path / "new.jpg", 1, "hash-new", "image")
+        self.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
+
+    async def complete_import(self, job) -> None:
+        calls["import"] += 1
+        for row in self.db.get_pending_files(job.job_id, limit=10):
+            self.db.update_file_status(row["id"], FileStatus.IMPORTED)
+        self.db.update_job_state(job.job_id, JobState.VERIFYING)
+
+    monkeypatch.setattr(ImportOrchestrator, "_scan_phase", complete_scan)
+    monkeypatch.setattr(ImportOrchestrator, "_import_phase", complete_import)
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db", active_job_path=tmp_path / "active_job.json")
+
+    await orchestrator.start_import(source_path, job_id=job_id)
+
+    assert calls == {"scan": 1, "import": 1}
+    assert db.get_job(job_id)["state"] == JobState.COMPLETED.value

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from icloudphotonator.db import Database
-from icloudphotonator.state import FileStatus
+from icloudphotonator.state import FileStatus, JobState
 
 
 def test_create_and_get_job(tmp_path: Path) -> None:
@@ -65,3 +65,23 @@ def test_job_stats_counts_statuses(tmp_path: Path) -> None:
     assert stats[FileStatus.IMPORTED.value] == 1
     assert stats[FileStatus.SKIPPED_DUPLICATE.value] == 1
     assert stats[FileStatus.ERROR.value] == 1
+
+
+def test_get_incomplete_jobs_excludes_terminal_states(tmp_path: Path) -> None:
+    db = Database(tmp_path / "jobs.db")
+
+    active_job_id = db.create_job("/photos/active", {})
+    completed_job_id = db.create_job("/photos/completed", {})
+    cancelled_job_id = db.create_job("/photos/cancelled", {})
+    db.update_job_state(active_job_id, JobState.IMPORTING)
+    db.update_job_state(completed_job_id, JobState.COMPLETED)
+    db.update_job_state(cancelled_job_id, JobState.CANCELLED)
+    db.add_file(active_job_id, "/photos/active/a.jpg", 123, "hash-a", "image")
+    db.update_file_status(db.add_file(active_job_id, "/photos/active/b.jpg", 456, "hash-b", "image"), FileStatus.IMPORTED)
+
+    jobs = db.get_incomplete_jobs()
+
+    assert [job["id"] for job in jobs] == [active_job_id]
+    assert jobs[0]["state"] == JobState.IMPORTING.value
+    assert jobs[0]["stats"]["total"] == 2
+    assert jobs[0]["stats"][FileStatus.IMPORTED.value] == 1
