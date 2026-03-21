@@ -94,8 +94,16 @@ class BackendBridge:
             self._emit_log(f"Starte Import für: {source_path}")
             result = start_import(source_path)
             if asyncio.iscoroutine(result):
-                self._loop.run_until_complete(result)
-            if self._on_complete:
+                result = self._loop.run_until_complete(result)
+
+            stats = None
+            if isinstance(result, str):
+                get_job_stats = getattr(orchestrator, "get_job_stats", None)
+                if callable(get_job_stats):
+                    stats = get_job_stats(result)
+
+            should_emit_complete = not (isinstance(stats, dict) and (stats.get("cancelled") or stats.get("state") == "cancelled"))
+            if self._on_complete and should_emit_complete:
                 self._on_complete()
         except Exception as exc:
             logger.exception("Import failed")

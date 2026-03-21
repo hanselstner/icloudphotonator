@@ -13,6 +13,7 @@ dependencies = [
   "pydantic",
   "websockets",
   "aiohttp",
+  "customtkinter>=5.2.2",
 ]
 
 [dependency-groups]
