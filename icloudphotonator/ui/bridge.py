@@ -43,14 +43,14 @@ class BackendBridge:
         self._on_complete = on_complete
         self._on_error = on_error
 
-    def start_import(self, source_path: Path, library: Path | None = None) -> None:
+    def start_import(self, source_path: Path, library: Path | None = None, album: str | None = None) -> None:
         """Start an import in a dedicated background thread."""
         if self._thread and self._thread.is_alive():
             self._emit_log("Ein Import läuft bereits.")
             return
         self._thread = threading.Thread(
             target=self._run_import,
-            args=(source_path, None, library),
+            args=(source_path, None, library, album),
             daemon=True,
         )
         self._thread.start()
@@ -135,6 +135,7 @@ class BackendBridge:
         source_path: Path,
         job_id: str | None = None,
         library: Path | None = None,
+        album: str | None = None,
     ) -> None:
         """Import worker executed on a background thread."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -149,6 +150,7 @@ class BackendBridge:
                 self._staging_dir,
                 active_job_path=self._active_job_path,
                 library=library,
+                album=album,
             )
             self._orchestrator = orchestrator
             self._register_callback(orchestrator, "on_progress", self._on_progress)

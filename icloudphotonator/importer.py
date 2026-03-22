@@ -50,6 +50,7 @@ class PhotoImporter:
         skip_dups: bool = True,
         auto_live: bool = True,
         use_exiftool: bool = True,
+        album: str | None = None,
         report_dir: Path | None = None,
         timeout: int = 600,
         library: Path | None = None,
@@ -63,7 +64,7 @@ class PhotoImporter:
         report_path = target_report_dir / f"import-report-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.csv"
 
         try:
-            self._run_import(file_paths, skip_dups, auto_live, use_exiftool, report_path, timeout, library)
+            self._run_import(file_paths, skip_dups, auto_live, use_exiftool, album, report_path, timeout, library)
         except Exception as exc:
             return self._result_from_report(
                 report_path=report_path,
@@ -80,6 +81,7 @@ class PhotoImporter:
         skip_dups: bool,
         auto_live: bool,
         use_exiftool: bool,
+        album: str | None,
         report_path: Path,
         timeout: int,
         library: Path | None = None,
@@ -94,6 +96,8 @@ class PhotoImporter:
             no_progress=True,
             report=str(report_path),
         )
+        if album:
+            import_kwargs["album"] = (album,)
         if library is not None:
             import_kwargs["library"] = str(library)
         import_cli(**import_kwargs)

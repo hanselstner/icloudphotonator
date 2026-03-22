@@ -29,6 +29,7 @@ def test_import_batch_uses_osxphotos_library_api_and_parses_report(
 ) -> None:
     captured: dict[str, object] = {}
     file_paths = [tmp_path / "a.jpg", tmp_path / "b.jpg"]
+    album = "Kristins iPhone"
     library = tmp_path / "Shared.photoslibrary"
     library.mkdir()
 
@@ -45,9 +46,10 @@ def test_import_batch_uses_osxphotos_library_api_and_parses_report(
     monkeypatch.setattr(PhotoImporter, "_get_import_cli", lambda self: fake_import_cli)
 
     importer = PhotoImporter()
-    result = importer.import_batch(file_paths, report_dir=tmp_path, library=library)
+    result = importer.import_batch(file_paths, report_dir=tmp_path, album=album, library=library)
 
     assert captured["files_or_dirs"] == tuple(str(path) for path in file_paths)
+    assert captured["album"] == (album,)
     assert captured["skip_dups"] is True
     assert captured["auto_live"] is True
     assert captured["exiftool"] is True

@@ -46,10 +46,12 @@ class ImportOrchestrator:
         staging_dir: Path | None = None,
         active_job_path: Path | None = None,
         library: Path | None = None,
+        album: str | None = None,
     ):
         self._db_path = Path(db_path)
         self._active_job_path = Path(active_job_path) if active_job_path else DEFAULT_ACTIVE_JOB_PATH
         self.library = Path(library) if library else None
+        self.album = album
         self.db = Database(self._db_path)
         self.throttle = ThrottleController()
         self.staging = StagingManager(staging_dir)
@@ -70,6 +72,8 @@ class ImportOrchestrator:
     async def start_import(self, source_path: Path, job_id: str | None = None):
         """Main entry point. Runs the full import workflow."""
         source_path = Path(source_path)
+        if self.album is None:
+            self.album = source_path.name
         self._cancelled = False
         self._paused.set()
         self._paused_thread.set()
@@ -361,6 +365,7 @@ class ImportOrchestrator:
                 skip_dups=True,
                 auto_live=True,
                 use_exiftool=True,
+                album=self.album,
                 report_dir=None,
                 timeout=600,
                 library=self.library,

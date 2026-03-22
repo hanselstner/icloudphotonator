@@ -24,10 +24,11 @@ def skip_osxphotos_check(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_orchestrator_initialization(tmp_path: Path) -> None:
     db_path = tmp_path / "jobs.db"
     staging_dir = tmp_path / "staging"
+    album = "Kristins iPhone"
     library = tmp_path / "Shared.photoslibrary"
     library.mkdir()
 
-    orchestrator = ImportOrchestrator(db_path, staging_dir, library=library)
+    orchestrator = ImportOrchestrator(db_path, staging_dir, library=library, album=album)
 
     assert isinstance(orchestrator.db, Database)
     assert isinstance(orchestrator.throttle, ThrottleController)
@@ -36,6 +37,7 @@ def test_orchestrator_initialization(tmp_path: Path) -> None:
     assert orchestrator.db.db_path == db_path
     assert orchestrator.staging.staging_dir == staging_dir
     assert orchestrator.library == library
+    assert orchestrator.album == album
     assert orchestrator._paused.is_set()
     assert orchestrator._paused_thread.is_set()
     assert orchestrator._cancelled is False
@@ -181,6 +183,31 @@ async def test_start_import_skips_network_monitor_for_local_source(
 
 
 @pytest.mark.asyncio
+async def test_start_import_defaults_album_from_source_folder_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "Kristins iPhone"
+    source_path.mkdir()
+    seen: dict[str, str | None] = {"album": None}
+
+    monkeypatch.setattr("icloudphotonator.orchestrator.Scanner._is_network_path", lambda self, path: False)
+    monkeypatch.setattr(ImportOrchestrator, "_scan_phase", _complete_scan)
+
+    async def capture_import(self, job) -> None:
+        seen["album"] = self.album
+        self.db.update_job_state(job.job_id, JobState.VERIFYING)
+
+    monkeypatch.setattr(ImportOrchestrator, "_import_phase", capture_import)
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+
+    await orchestrator.start_import(source_path)
+
+    assert seen["album"] == source_path.name
+
+
+@pytest.mark.asyncio
 async def test_resume_existing_job_requeues_files_skips_scan_and_clears_active_job(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -268,7 +295,7 @@ async def test_resume_existing_job_scans_when_no_files_exist(
 
 
 @pytest.mark.asyncio
-async def test_import_phase_passes_library_to_importer(
+async def test_import_phase_passes_library_and_album_to_importer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -276,16 +303,17 @@ async def test_import_phase_passes_library_to_importer(
     source_path.mkdir()
     file_path = source_path / "a.jpg"
     file_path.write_bytes(b"image-bytes")
+    album = "Kristins iPhone"
     library = tmp_path / "Family.photoslibrary"
     library.mkdir()
 
-    orchestrator = ImportOrchestrator(tmp_path / "jobs.db", library=library)
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db", library=library, album=album)
     job = Job(orchestrator.db)
     job.start(source_path)
     orchestrator.db.add_file(job.job_id, file_path, 1, "hash-a", "image")
     orchestrator.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
 
-    captured: dict[str, Path | None] = {}
+    captured: dict[str, object] = {}
 
     monkeypatch.setattr(
         "icloudphotonator.orchestrator.DeduplicationEngine.check_duplicates",
@@ -300,10 +328,12 @@ async def test_import_phase_passes_library_to_importer(
         skip_dups=True,
         auto_live=True,
         use_exiftool=True,
+        album=None,
         report_dir=None,
         timeout=600,
         library=None,
     ):
+        captured["album"] = album
         captured["library"] = library
         return SimpleNamespace(error_count=0)
 
@@ -317,4 +347,5 @@ async def test_import_phase_passes_library_to_importer(
 
     await orchestrator._import_phase(job)
 
+    assert captured["album"] == album
     assert captured["library"] == library

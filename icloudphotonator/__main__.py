@@ -39,13 +39,25 @@ def gui() -> None:
     help="Database path for job persistence",
 )
 @click.option(
+    "--album",
+    type=str,
+    default=None,
+    help="Name des Import-Albums (Standard: Name des Quellordners)",
+)
+@click.option(
     "--library",
     "--mediathek",
     type=click.Path(exists=True),
     default=None,
     help="Pfad zur Ziel-Mediathek (.photoslibrary)",
 )
-def import_photos(source: str, staging_dir: str | None, db_path: str | None, library: str | None) -> None:
+def import_photos(
+    source: str,
+    staging_dir: str | None,
+    db_path: str | None,
+    album: str | None,
+    library: str | None,
+) -> None:
     """Import photos from SOURCE folder (CLI mode)."""
     import asyncio
     from pathlib import Path
@@ -57,15 +69,18 @@ def import_photos(source: str, staging_dir: str | None, db_path: str | None, lib
     source_path = Path(source)
     staging = Path(staging_dir).expanduser() if staging_dir else Path.home() / ".icloudphotonator" / "staging"
     db = Path(db_path).expanduser() if db_path else Path.home() / ".icloudphotonator" / "icloudphotonator.db"
+    target_album = source_path.name if album is None else album
     target_library = Path(library).expanduser() if library else None
 
     click.echo(f"🖼️ iCloudPhotonator — Importing from: {source_path}")
     click.echo(f"📁 Staging: {staging}")
     click.echo(f"💾 Database: {db}")
+    if target_album:
+        click.echo(f"🗂️ Album: {target_album}")
     if target_library is not None:
         click.echo(f"📚 Mediathek: {target_library}")
 
-    orchestrator = ImportOrchestrator(db_path=db, staging_dir=staging, library=target_library)
+    orchestrator = ImportOrchestrator(db_path=db, staging_dir=staging, library=target_library, album=target_album)
 
     def on_progress(stats: dict) -> None:
         imported = stats.get("imported", 0)

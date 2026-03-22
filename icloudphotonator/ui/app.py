@@ -126,6 +126,7 @@ else:
             self._is_paused = False
             self._last_stats: dict[str, int] = {}
             self.path_var = tk.StringVar(value="Noch kein Ordner ausgewählt")
+            self.album_var = tk.StringVar(value="")
             self.library_var = tk.StringVar(value=DEFAULT_LIBRARY_OPTION)
             self._library_options: dict[str, Path | None] = {}
             self._bridge = BackendBridge()
@@ -147,6 +148,7 @@ else:
             self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
             self._build_header()
             self._build_source_section()
+            self._build_album_section()
             self._build_library_section()
             self._build_status_section()
             self._build_stats_grid()
@@ -176,6 +178,15 @@ else:
             self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
             self.browse_btn = ctk.CTkButton(row, text="Ordner wählen...", width=150, fg_color=ACCENT_BLUE, hover_color="#0062cc", command=self._browse_folder)
             self.browse_btn.pack(side="right")
+
+        def _build_album_section(self) -> None:
+            frame = ctk.CTkFrame(self.main_frame)
+            frame.pack(fill="x", pady=(0, 12))
+            inner = ctk.CTkFrame(frame, fg_color="transparent")
+            inner.pack(fill="x", padx=16, pady=16)
+            ctk.CTkLabel(inner, text="Import-Album", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w")
+            self.album_entry = ctk.CTkEntry(inner, textvariable=self.album_var)
+            self.album_entry.pack(fill="x", pady=(8, 0))
 
         def _build_library_section(self) -> None:
             frame = ctk.CTkFrame(self.main_frame)
@@ -253,6 +264,7 @@ else:
                 return
             self._source_path = Path(path)
             self._set_path_display(str(self._source_path))
+            self.album_var.set(self._source_path.name)
             if not self._is_running:
                 self.start_btn.configure(state="normal")
             self.add_log(f"Quellordner gewählt: {path}")
@@ -287,6 +299,7 @@ else:
 
             self._source_path = Path(source_path)
             self._set_path_display(source_path)
+            self.album_var.set(self._source_path.name)
             self.add_log(f"Setze gespeicherten Import fort: {source_path}")
             self._start_import_run(job_id=job["id"])
 
@@ -299,6 +312,7 @@ else:
             self.pause_btn.configure(state="normal", text="⏸ Pause")
             self.stop_btn.configure(state="normal")
             self.browse_btn.configure(state="disabled")
+            self.album_entry.configure(state="disabled")
             self.library_combo.configure(state="disabled")
             self._set_status("🔄 Scanne...", indeterminate=True)
             if job_id:
@@ -307,9 +321,12 @@ else:
                 return
             self.add_log("Import gestartet...")
             library = self._get_selected_library()
+            album = self.album_var.get().strip()
             if library is not None:
                 self.add_log(f"Ziel-Mediathek: {library}")
-            self._bridge.start_import(self._source_path, library=library)
+            if album:
+                self.add_log(f"Import-Album: {album}")
+            self._bridge.start_import(self._source_path, library=library, album=album)
 
         def _on_pause(self) -> None:
             if not self._is_running:
@@ -350,6 +367,7 @@ else:
             self.pause_btn.configure(state="disabled", text="⏸ Pause")
             self.stop_btn.configure(state="disabled")
             self.browse_btn.configure(state="normal")
+            self.album_entry.configure(state="normal")
             self.library_combo.configure(state="readonly")
             self._set_status(status_text)
             if completed:
