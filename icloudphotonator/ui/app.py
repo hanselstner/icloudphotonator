@@ -118,8 +118,8 @@ else:
             super().__init__()
 
             self.title(APP_TITLE)
-            self.geometry("700x800")
-            self.minsize(600, 700)
+            self.geometry("700x650")
+            self.minsize(600, 550)
 
             self._source_path: Path | None = None
             self._is_running = False
@@ -147,9 +147,7 @@ else:
             self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
             self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
             self._build_header()
-            self._build_source_section()
-            self._build_album_section()
-            self._build_library_section()
+            self._build_input_section()
             self._build_status_section()
             self._build_stats_grid()
             self._build_controls()
@@ -158,49 +156,63 @@ else:
 
         def _build_header(self) -> None:
             header = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-            header.pack(fill="x", pady=(0, 18))
-            icon_frame = ctk.CTkFrame(header, width=72, height=72, corner_radius=20, fg_color=ACCENT_BLUE)
+            header.pack(fill="x", pady=(0, 10))
+            icon_frame = ctk.CTkFrame(header, width=50, height=50, corner_radius=14, fg_color=ACCENT_BLUE)
             icon_frame.pack()
             icon_frame.pack_propagate(False)
-            ctk.CTkLabel(icon_frame, text="🖼️", font=ctk.CTkFont(size=30)).pack(expand=True)
-            ctk.CTkLabel(header, text=APP_TITLE, font=ctk.CTkFont(size=28, weight="bold")).pack(pady=(12, 0))
-            ctk.CTkLabel(header, text=APP_SUBTITLE, font=ctk.CTkFont(size=13), text_color=("#4b5563", "#9ca3af")).pack()
+            ctk.CTkLabel(icon_frame, text="🖼️", font=ctk.CTkFont(size=22)).pack(expand=True)
+            ctk.CTkLabel(header, text=APP_TITLE, font=ctk.CTkFont(size=22, weight="bold")).pack(pady=(8, 0))
+            ctk.CTkLabel(header, text=APP_SUBTITLE, font=ctk.CTkFont(size=12), text_color=("#4b5563", "#9ca3af")).pack()
 
-        def _build_source_section(self) -> None:
+        def _build_input_section(self) -> None:
+            """Build the combined input section: source folder, album, library."""
             frame = ctk.CTkFrame(self.main_frame)
-            frame.pack(fill="x", pady=(0, 12))
+            frame.pack(fill="x", pady=(0, 10))
             inner = ctk.CTkFrame(frame, fg_color="transparent")
-            inner.pack(fill="x", padx=16, pady=16)
-            ctk.CTkLabel(inner, text="Quellordner", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w")
-            row = ctk.CTkFrame(inner, fg_color="transparent")
-            row.pack(fill="x", pady=(8, 0))
-            self.path_entry = ctk.CTkEntry(row, textvariable=self.path_var, state="disabled")
-            self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
-            self.browse_btn = ctk.CTkButton(row, text="Ordner wählen...", width=150, fg_color=ACCENT_BLUE, hover_color="#0062cc", command=self._browse_folder)
+            inner.pack(fill="x", padx=14, pady=12)
+
+            ctk.CTkLabel(inner, text="Quellordner", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+            row1 = ctk.CTkFrame(inner, fg_color="transparent")
+            row1.pack(fill="x", pady=(4, 8))
+            self.path_entry = ctk.CTkEntry(row1, textvariable=self.path_var, state="disabled")
+            self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+            self.browse_btn = ctk.CTkButton(
+                row1,
+                text="Ordner wählen…",
+                width=130,
+                fg_color=ACCENT_BLUE,
+                hover_color="#0062cc",
+                command=self._browse_folder,
+            )
             self.browse_btn.pack(side="right")
 
-        def _build_album_section(self) -> None:
-            frame = ctk.CTkFrame(self.main_frame)
-            frame.pack(fill="x", pady=(0, 12))
-            inner = ctk.CTkFrame(frame, fg_color="transparent")
-            inner.pack(fill="x", padx=16, pady=16)
-            ctk.CTkLabel(inner, text="Import-Album", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w")
-            self.album_entry = ctk.CTkEntry(inner, textvariable=self.album_var)
-            self.album_entry.pack(fill="x", pady=(8, 0))
+            ctk.CTkLabel(inner, text="Import-Album", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+            row2 = ctk.CTkFrame(inner, fg_color="transparent")
+            row2.pack(fill="x", pady=(4, 8))
+            self.album_entry = ctk.CTkEntry(
+                row2,
+                textvariable=self.album_var,
+                placeholder_text="Album-Name (leer = kein Album)",
+            )
+            self.album_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+            self.album_auto_btn = ctk.CTkButton(
+                row2,
+                text="↻ Auto",
+                width=70,
+                fg_color="#6c757d",
+                hover_color="#5a6268",
+                command=self._auto_fill_album,
+            )
+            self.album_auto_btn.pack(side="right")
 
-        def _build_library_section(self) -> None:
-            frame = ctk.CTkFrame(self.main_frame)
-            frame.pack(fill="x", pady=(0, 12))
-            inner = ctk.CTkFrame(frame, fg_color="transparent")
-            inner.pack(fill="x", padx=16, pady=16)
-            ctk.CTkLabel(inner, text="Ziel-Mediathek", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w")
+            ctk.CTkLabel(inner, text="Ziel-Mediathek", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
             self.library_combo = ctk.CTkComboBox(
                 inner,
                 variable=self.library_var,
                 values=[DEFAULT_LIBRARY_OPTION],
                 state="readonly",
             )
-            self.library_combo.pack(fill="x", pady=(8, 0))
+            self.library_combo.pack(fill="x", pady=(4, 0))
             self._refresh_library_options()
 
         def _refresh_library_options(self) -> None:
@@ -216,7 +228,7 @@ else:
 
         def _build_status_section(self) -> None:
             frame = ctk.CTkFrame(self.main_frame)
-            frame.pack(fill="x", pady=(0, 12))
+            frame.pack(fill="x", pady=(0, 8))
             inner = ctk.CTkFrame(frame, fg_color="transparent")
             inner.pack(fill="x", padx=16, pady=14)
             self.status_label = ctk.CTkLabel(inner, text="", font=ctk.CTkFont(size=15, weight="bold"))
@@ -227,7 +239,7 @@ else:
 
         def _build_stats_grid(self) -> None:
             frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-            frame.pack(fill="x", pady=(0, 12))
+            frame.pack(fill="x", pady=(0, 8))
             frame.grid_columnconfigure((0, 1, 2), weight=1)
             labels = ["Entdeckt", "Importiert", "Übersprungen", "Duplikate", "Fehler", "Verbleibend"]
             self.stat_cards: dict[str, StatsCard] = {}
@@ -239,7 +251,7 @@ else:
 
         def _build_controls(self) -> None:
             frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-            frame.pack(fill="x", pady=(0, 12))
+            frame.pack(fill="x", pady=(0, 8))
             self.start_btn = ctk.CTkButton(frame, text="▶ Start", fg_color="#28a745", hover_color="#218838", command=self._on_start, state="disabled")
             self.start_btn.pack(side="left", padx=(0, 6), expand=True, fill="x")
             self.pause_btn = ctk.CTkButton(frame, text="⏸ Pause", fg_color="#ffc107", hover_color="#e0a800", text_color="black", command=self._on_pause, state="disabled")
@@ -264,10 +276,14 @@ else:
                 return
             self._source_path = Path(path)
             self._set_path_display(str(self._source_path))
-            self.album_var.set(self._source_path.name)
+            self._auto_fill_album()
             if not self._is_running:
                 self.start_btn.configure(state="normal")
             self.add_log(f"Quellordner gewählt: {path}")
+
+        def _auto_fill_album(self) -> None:
+            if self._source_path:
+                self.album_var.set(self._source_path.name)
 
         def _on_start(self) -> None:
             if not self._source_path:
@@ -299,7 +315,7 @@ else:
 
             self._source_path = Path(source_path)
             self._set_path_display(source_path)
-            self.album_var.set(self._source_path.name)
+            self._auto_fill_album()
             self.add_log(f"Setze gespeicherten Import fort: {source_path}")
             self._start_import_run(job_id=job["id"])
 
@@ -313,6 +329,7 @@ else:
             self.stop_btn.configure(state="normal")
             self.browse_btn.configure(state="disabled")
             self.album_entry.configure(state="disabled")
+            self.album_auto_btn.configure(state="disabled")
             self.library_combo.configure(state="disabled")
             self._set_status("🔄 Scanne...", indeterminate=True)
             if job_id:
@@ -368,6 +385,7 @@ else:
             self.stop_btn.configure(state="disabled")
             self.browse_btn.configure(state="normal")
             self.album_entry.configure(state="normal")
+            self.album_auto_btn.configure(state="normal")
             self.library_combo.configure(state="readonly")
             self._set_status(status_text)
             if completed:
