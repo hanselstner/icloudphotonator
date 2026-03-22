@@ -42,3 +42,34 @@ def test_bridge_prioritizes_last_active_incomplete_job(tmp_path: Path) -> None:
     jobs = bridge.get_incomplete_jobs()
 
     assert [job["id"] for job in jobs] == [first_job_id, second_job_id]
+
+
+def test_bridge_start_import_passes_library_to_worker_thread(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    library = tmp_path / "Family.photoslibrary"
+    captured: dict[str, object] = {}
+
+    class FakeThread:
+        def __init__(self, target, args, daemon) -> None:
+            captured["target"] = target
+            captured["args"] = args
+            captured["daemon"] = daemon
+
+        def start(self) -> None:
+            captured["started"] = True
+
+        def is_alive(self) -> bool:
+            return False
+
+    monkeypatch.setattr("icloudphotonator.ui.bridge.threading.Thread", FakeThread)
+
+    bridge = BackendBridge(db_path=tmp_path / "jobs.db")
+    bridge.start_import(source_path, library=library)
+
+    assert captured["target"] == bridge._run_import
+    assert captured["args"] == (source_path, None, library)
+    assert captured["daemon"] is True
+    assert captured["started"] is True

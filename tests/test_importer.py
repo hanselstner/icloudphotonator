@@ -1,6 +1,26 @@
 from pathlib import Path
 
-from icloudphotonator.importer import PhotoImporter
+from icloudphotonator.importer import PhotoImporter, find_photo_libraries
+
+
+def test_find_photo_libraries_searches_common_directories(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pictures_dir = tmp_path / "Pictures"
+    shared_dir = tmp_path / "Shared"
+    pictures_dir.mkdir()
+    shared_dir.mkdir()
+    private_library = pictures_dir / "Private.photoslibrary"
+    shared_library = shared_dir / "Family.photoslibrary"
+    private_library.mkdir()
+    shared_library.mkdir()
+    (pictures_dir / "ignore.txt").write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr("icloudphotonator.importer.PICTURES_LIBRARY_DIR", pictures_dir)
+    monkeypatch.setattr("icloudphotonator.importer.SHARED_LIBRARY_DIR", shared_dir)
+
+    assert find_photo_libraries() == [private_library, shared_library]
 
 
 def test_import_batch_uses_osxphotos_library_api_and_parses_report(
@@ -9,6 +29,8 @@ def test_import_batch_uses_osxphotos_library_api_and_parses_report(
 ) -> None:
     captured: dict[str, object] = {}
     file_paths = [tmp_path / "a.jpg", tmp_path / "b.jpg"]
+    library = tmp_path / "Shared.photoslibrary"
+    library.mkdir()
 
     def fake_import_cli(**kwargs) -> None:
         captured.update(kwargs)
@@ -23,13 +45,14 @@ def test_import_batch_uses_osxphotos_library_api_and_parses_report(
     monkeypatch.setattr(PhotoImporter, "_get_import_cli", lambda self: fake_import_cli)
 
     importer = PhotoImporter()
-    result = importer.import_batch(file_paths, report_dir=tmp_path)
+    result = importer.import_batch(file_paths, report_dir=tmp_path, library=library)
 
     assert captured["files_or_dirs"] == tuple(str(path) for path in file_paths)
     assert captured["skip_dups"] is True
     assert captured["auto_live"] is True
     assert captured["exiftool"] is True
     assert captured["no_progress"] is True
+    assert captured["library"] == str(library)
     assert result.success is True
     assert result.imported_count == 1
     assert result.skipped_count == 1

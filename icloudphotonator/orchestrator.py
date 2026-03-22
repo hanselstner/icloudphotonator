@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import logging
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -13,7 +14,7 @@ from .importer import PhotoImporter
 from .job import Job
 from .persistence import DEFAULT_ACTIVE_JOB_PATH, clear_active_job, save_active_job
 from .resilience import NetworkMonitor
-from .scanner import FileInfo, MediaType, Scanner
+from .scanner import FileInfo, MediaType, ScanCancelledError, Scanner
 from .staging import StagingManager
 from .state import FileStatus, JobState, transition
 from .throttle import ThrottleController
@@ -44,16 +45,21 @@ class ImportOrchestrator:
         db_path: Path,
         staging_dir: Path | None = None,
         active_job_path: Path | None = None,
+        library: Path | None = None,
     ):
         self._db_path = Path(db_path)
         self._active_job_path = Path(active_job_path) if active_job_path else DEFAULT_ACTIVE_JOB_PATH
+        self.library = Path(library) if library else None
         self.db = Database(self._db_path)
         self.throttle = ThrottleController()
         self.staging = StagingManager(staging_dir)
         self.importer = PhotoImporter()
         self._paused = asyncio.Event()
         self._paused.set()
+        self._paused_thread = threading.Event()
+        self._paused_thread.set()
         self._cancelled = False
+        self._cancel_thread = threading.Event()
         self._progress_callbacks: list[Callable] = []
         self._log_callbacks: list[Callable[[str], None]] = []
         self._active_job: Job | None = None
@@ -66,6 +72,8 @@ class ImportOrchestrator:
         source_path = Path(source_path)
         self._cancelled = False
         self._paused.set()
+        self._paused_thread.set()
+        self._cancel_thread.clear()
         job = Job(self.db, job_id) if job_id else Job(self.db)
         self._active_job = job
         self._stop_network_monitor()
@@ -153,6 +161,7 @@ class ImportOrchestrator:
     def pause(self):
         """Pause the import."""
         self._paused.clear()
+        self._paused_thread.clear()
         if self._active_job and self._active_job.state in {
             JobState.SCANNING,
             JobState.DEDUPLICATING,
@@ -166,6 +175,7 @@ class ImportOrchestrator:
     def resume(self):
         """Resume the import."""
         self._paused.set()
+        self._paused_thread.set()
         if self._active_job and self._active_job.state == JobState.PAUSED:
             self._active_job.resume()
             self._emit_log("Import fortgesetzt.")
@@ -174,6 +184,8 @@ class ImportOrchestrator:
         """Cancel the import."""
         self._cancelled = True
         self._paused.set()
+        self._paused_thread.set()
+        self._cancel_thread.set()
         if self._active_job and self._active_job.state not in {JobState.CANCELLED, JobState.COMPLETED}:
             self._active_job.cancel()
             self._emit_log("Import gestoppt.")
@@ -250,7 +262,25 @@ class ImportOrchestrator:
                 }
             )
 
-        manifest = await asyncio.to_thread(Scanner(source_path).scan, _on_file)
+        def _pause_check() -> None:
+            self._paused_thread.wait()
+
+        def _cancel_check() -> bool:
+            return self._cancel_thread.is_set()
+
+        try:
+            manifest = await asyncio.to_thread(
+                Scanner(source_path).scan,
+                _on_file,
+                _pause_check,
+                _cancel_check,
+            )
+        except ScanCancelledError:
+            if not self._cancelled:
+                self.cancel()
+            self._notify_progress(self.get_job_stats(job.job_id))
+            return
+
         for file_info in manifest.files:
             self.db.add_file(
                 job.job_id,
@@ -328,11 +358,12 @@ class ImportOrchestrator:
             result = await asyncio.to_thread(
                 self.importer.import_batch,
                 staged_paths,
-                True,
-                True,
-                True,
-                None,
-                600,
+                skip_dups=True,
+                auto_live=True,
+                use_exiftool=True,
+                report_dir=None,
+                timeout=600,
+                library=self.library,
             )
 
             cleanup_paths: list[Path] = []

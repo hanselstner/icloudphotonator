@@ -9,6 +9,19 @@ from importlib import import_module
 from pathlib import Path
 
 
+PICTURES_LIBRARY_DIR = Path.home() / "Pictures"
+SHARED_LIBRARY_DIR = Path("/Users/Shared")
+
+
+def find_photo_libraries() -> list[Path]:
+    """Find all Apple Photos libraries in common local locations."""
+    libraries: list[Path] = []
+    for directory in (PICTURES_LIBRARY_DIR, SHARED_LIBRARY_DIR):
+        if directory.exists():
+            libraries.extend(directory.glob("*.photoslibrary"))
+    return sorted({path for path in libraries})
+
+
 @dataclass
 class ImportResult:
     success: bool
@@ -39,6 +52,7 @@ class PhotoImporter:
         use_exiftool: bool = True,
         report_dir: Path | None = None,
         timeout: int = 600,
+        library: Path | None = None,
     ) -> ImportResult:
         """Import a batch of files using osxphotos' in-process import API."""
         if not file_paths:
@@ -49,7 +63,7 @@ class PhotoImporter:
         report_path = target_report_dir / f"import-report-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.csv"
 
         try:
-            self._run_import(file_paths, skip_dups, auto_live, use_exiftool, report_path, timeout)
+            self._run_import(file_paths, skip_dups, auto_live, use_exiftool, report_path, timeout, library)
         except Exception as exc:
             return self._result_from_report(
                 report_path=report_path,
@@ -68,10 +82,11 @@ class PhotoImporter:
         use_exiftool: bool,
         report_path: Path,
         timeout: int,
+        library: Path | None = None,
     ) -> None:
         del timeout  # In-process osxphotos API does not expose timeout control.
         import_cli = self._get_import_cli()
-        import_cli(
+        import_kwargs = dict(
             files_or_dirs=tuple(str(path) for path in file_paths),
             skip_dups=skip_dups,
             auto_live=auto_live,
@@ -79,6 +94,9 @@ class PhotoImporter:
             no_progress=True,
             report=str(report_path),
         )
+        if library is not None:
+            import_kwargs["library"] = str(library)
+        import_cli(**import_kwargs)
 
     def _get_import_cli(self):
         try:

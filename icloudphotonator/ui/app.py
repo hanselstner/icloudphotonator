@@ -18,12 +18,23 @@ except ModuleNotFoundError as exc:
 else:
     _UI_IMPORT_ERROR = None
 
+from icloudphotonator.importer import find_photo_libraries
+
 from .bridge import BackendBridge
 
 APP_TITLE = "iCloudPhotonator"
 APP_SUBTITLE = "Foto-Migration für Apple Fotos"
 REPOSITORY_URL = "https://github.com/hanselstner/icloudphototnator"
 ACCENT_BLUE = "#007AFF"
+DEFAULT_LIBRARY_OPTION = "Standard (Systemmediathek)"
+
+
+def build_library_options(libraries: list[Path]) -> dict[str, Path | None]:
+    """Build display labels for selectable Photos libraries."""
+    options: dict[str, Path | None] = {DEFAULT_LIBRARY_OPTION: None}
+    for path in libraries:
+        options[f"{path.stem} — {path}"] = path
+    return options
 
 
 def _raise_missing_ui_support() -> None:
@@ -115,6 +126,8 @@ else:
             self._is_paused = False
             self._last_stats: dict[str, int] = {}
             self.path_var = tk.StringVar(value="Noch kein Ordner ausgewählt")
+            self.library_var = tk.StringVar(value=DEFAULT_LIBRARY_OPTION)
+            self._library_options: dict[str, Path | None] = {}
             self._bridge = BackendBridge()
             self._bridge.set_callbacks(
                 on_progress=self._handle_progress,
@@ -134,6 +147,7 @@ else:
             self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
             self._build_header()
             self._build_source_section()
+            self._build_library_section()
             self._build_status_section()
             self._build_stats_grid()
             self._build_controls()
@@ -162,6 +176,32 @@ else:
             self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
             self.browse_btn = ctk.CTkButton(row, text="Ordner wählen...", width=150, fg_color=ACCENT_BLUE, hover_color="#0062cc", command=self._browse_folder)
             self.browse_btn.pack(side="right")
+
+        def _build_library_section(self) -> None:
+            frame = ctk.CTkFrame(self.main_frame)
+            frame.pack(fill="x", pady=(0, 12))
+            inner = ctk.CTkFrame(frame, fg_color="transparent")
+            inner.pack(fill="x", padx=16, pady=16)
+            ctk.CTkLabel(inner, text="Ziel-Mediathek", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w")
+            self.library_combo = ctk.CTkComboBox(
+                inner,
+                variable=self.library_var,
+                values=[DEFAULT_LIBRARY_OPTION],
+                state="readonly",
+            )
+            self.library_combo.pack(fill="x", pady=(8, 0))
+            self._refresh_library_options()
+
+        def _refresh_library_options(self) -> None:
+            options = build_library_options(find_photo_libraries())
+            labels = list(options)
+            current = self.library_var.get()
+            self._library_options = options
+            self.library_combo.configure(values=labels)
+            self.library_var.set(current if current in options else DEFAULT_LIBRARY_OPTION)
+
+        def _get_selected_library(self) -> Path | None:
+            return self._library_options.get(self.library_var.get())
 
         def _build_status_section(self) -> None:
             frame = ctk.CTkFrame(self.main_frame)
@@ -220,6 +260,7 @@ else:
         def _on_start(self) -> None:
             if not self._source_path:
                 return
+            self._refresh_library_options()
             self._start_import_run()
 
         def _check_for_incomplete_jobs(self) -> None:
@@ -258,13 +299,17 @@ else:
             self.pause_btn.configure(state="normal", text="⏸ Pause")
             self.stop_btn.configure(state="normal")
             self.browse_btn.configure(state="disabled")
+            self.library_combo.configure(state="disabled")
             self._set_status("🔄 Scanne...", indeterminate=True)
             if job_id:
                 self.add_log("Import wird fortgesetzt...")
                 self._bridge.resume_import(job_id)
                 return
             self.add_log("Import gestartet...")
-            self._bridge.start_import(self._source_path)
+            library = self._get_selected_library()
+            if library is not None:
+                self.add_log(f"Ziel-Mediathek: {library}")
+            self._bridge.start_import(self._source_path, library=library)
 
         def _on_pause(self) -> None:
             if not self._is_running:
@@ -305,6 +350,7 @@ else:
             self.pause_btn.configure(state="disabled", text="⏸ Pause")
             self.stop_btn.configure(state="disabled")
             self.browse_btn.configure(state="normal")
+            self.library_combo.configure(state="readonly")
             self._set_status(status_text)
             if completed:
                 self.progress_bar.set(1)

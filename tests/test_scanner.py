@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from icloudphotonator.scanner import MediaType, Scanner
+from icloudphotonator.scanner import MediaType, ScanCancelledError, Scanner
 
 
 def _write_file(path: Path, size: int = 128) -> Path:
@@ -73,3 +73,36 @@ def test_small_files_are_skipped(tmp_path: Path) -> None:
     manifest = Scanner(tmp_path, compute_hashes=False).scan()
 
     assert [file.path.name for file in manifest.files] == ["valid.jpg"]
+
+
+def test_scan_calls_pause_check_for_each_discovered_file(tmp_path: Path) -> None:
+    _write_file(tmp_path / "one.jpg")
+    _write_file(tmp_path / "two.jpg")
+    pause_calls: list[str] = []
+
+    manifest = Scanner(tmp_path, compute_hashes=False).scan(
+        pause_check=lambda: pause_calls.append("pause")
+    )
+
+    assert len(manifest.files) == 2
+    assert pause_calls == ["pause", "pause"]
+
+
+def test_scan_raises_when_cancelled(tmp_path: Path) -> None:
+    _write_file(tmp_path / "one.jpg")
+    _write_file(tmp_path / "two.jpg")
+    pause_calls: list[str] = []
+    cancel_checks = {"count": 0}
+
+    def _cancel_check() -> bool:
+        cancel_checks["count"] += 1
+        return cancel_checks["count"] == 1
+
+    with pytest.raises(ScanCancelledError):
+        Scanner(tmp_path, compute_hashes=False).scan(
+            pause_check=lambda: pause_calls.append("pause"),
+            cancel_check=_cancel_check,
+        )
+
+    assert pause_calls == ["pause"]
+    assert cancel_checks["count"] == 1

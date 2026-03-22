@@ -15,6 +15,10 @@ from typing import Callable
 logger = logging.getLogger(__name__)
 
 
+class ScanCancelledError(RuntimeError):
+    """Raised when a scan is cancelled."""
+
+
 class MediaType(Enum):
     PHOTO = "photo"
     VIDEO = "video"
@@ -72,7 +76,10 @@ class Scanner:
         self.compute_hashes = compute_hashes
 
     def scan(
-        self, progress_callback: Callable[[FileInfo], None] | None = None
+        self,
+        progress_callback: Callable[[FileInfo], None] | None = None,
+        pause_check: Callable[[], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> ScanManifest:
         files: list[FileInfo] = []
         total_size = 0
@@ -129,6 +136,12 @@ class Scanner:
 
                 if progress_callback is not None:
                     progress_callback(file_info)
+
+                if pause_check is not None:
+                    pause_check()
+
+                if cancel_check is not None and cancel_check():
+                    raise ScanCancelledError(f"Scan cancelled while processing {path}")
 
         return ScanManifest(
             files=files,
