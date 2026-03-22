@@ -403,3 +403,171 @@ def test_apply_report_logs_result_errors_to_ui_and_db(tmp_path: Path) -> None:
     assert processed_paths == {str(file_path)}
     assert emitted_logs == ["❌ first error", "❌ second error", "❌ third error"]
     assert any(log["action"] == "import_error" and log["details"] == "first error" for log in recent_logs)
+
+
+@pytest.mark.asyncio
+async def test_import_phase_resolves_staged_paths_and_always_cleans_up_staged_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_path = source_path / "a.jpg"
+    file_path.write_bytes(b"image-bytes")
+
+    real_stage_dir = tmp_path / "real-stage"
+    real_stage_dir.mkdir()
+    aliased_stage_dir = tmp_path / "alias-stage"
+    aliased_stage_dir.symlink_to(real_stage_dir, target_is_directory=True)
+    real_staged_path = real_stage_dir / file_path.name
+    real_staged_path.write_bytes(b"staged-bytes")
+    aliased_staged_path = aliased_stage_dir / file_path.name
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    orchestrator.db.add_file(job.job_id, file_path, 1, "hash-a", "image")
+    orchestrator.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
+
+    captured: dict[str, object] = {}
+    cleanup_calls: list[list[Path]] = []
+
+    monkeypatch.setattr(
+        "icloudphotonator.orchestrator.DeduplicationEngine.check_duplicates",
+        lambda self, file_infos: (file_infos, []),
+    )
+
+    async def fake_stage_files(unique_files):
+        return [(unique_files[0], aliased_staged_path)], []
+
+    def fake_import_batch(file_paths, **kwargs):
+        captured["file_paths"] = file_paths
+        return SimpleNamespace(error_count=0, success=True)
+
+    def fake_apply_report(job_arg, row_by_path, staged_lookup, result):
+        captured["staged_lookup_keys"] = list(staged_lookup.keys())
+        return set()
+
+    def fake_cleanup(paths):
+        cleanup_calls.append(paths)
+
+    monkeypatch.setattr(orchestrator.staging, "stage_files", fake_stage_files)
+    monkeypatch.setattr(orchestrator.importer, "import_batch", fake_import_batch)
+    monkeypatch.setattr(orchestrator, "_apply_report", fake_apply_report)
+    monkeypatch.setattr(orchestrator.staging, "cleanup_staged", fake_cleanup)
+
+    await orchestrator._import_phase(job)
+
+    assert captured["file_paths"] == [real_staged_path]
+    assert captured["staged_lookup_keys"] == [str(real_staged_path)]
+    assert cleanup_calls == [[aliased_staged_path]]
+
+
+def test_apply_report_resolves_report_filepaths_before_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_path = source_path / "a.jpg"
+    file_path.write_bytes(b"image-bytes")
+
+    real_stage_dir = tmp_path / "real-stage"
+    real_stage_dir.mkdir()
+    aliased_stage_dir = tmp_path / "alias-stage"
+    aliased_stage_dir.symlink_to(real_stage_dir, target_is_directory=True)
+    real_staged_path = real_stage_dir / file_path.name
+    real_staged_path.write_bytes(b"staged-bytes")
+    aliased_staged_path = aliased_stage_dir / file_path.name
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    file_id = orchestrator.db.add_file(job.job_id, file_path, 1, "hash-a", "image")
+    file_info = orchestrator._row_to_file_info({"path": str(file_path), "size": 1, "hash": "hash-a", "media_type": "image"})
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_read_report_rows",
+        lambda report_path: [{"filepath": str(aliased_staged_path), "imported": "true", "error": "false", "uuid": "uuid-1"}],
+    )
+
+    processed_paths = orchestrator._apply_report(
+        job,
+        row_by_path={str(file_path): {"id": file_id, "path": str(file_path)}},
+        staged_lookup={str(real_staged_path): file_info},
+        result=SimpleNamespace(report_path=tmp_path / "report.csv", errors=[], error_count=0, success=True),
+    )
+
+    row = orchestrator.db._connection.execute(
+        "SELECT status FROM files WHERE id = ?",
+        (file_id,),
+    ).fetchone()
+    recent_logs = orchestrator.db.get_recent_logs(job.job_id, limit=5)
+
+    assert processed_paths == {str(file_path)}
+    assert row["status"] == FileStatus.IMPORTED.value
+    assert any(log["action"] == "imported" and log["details"] == str(real_staged_path) for log in recent_logs)
+
+
+@pytest.mark.parametrize(
+    ("success", "error_count", "expected_status", "expected_action"),
+    [
+        (True, 0, FileStatus.SKIPPED_DUPLICATE.value, "skipped_unmatched"),
+        (False, 1, FileStatus.ERROR.value, "import_error"),
+    ],
+)
+def test_apply_report_marks_unmatched_files_instead_of_leaving_them_importing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    success: bool,
+    error_count: int,
+    expected_status: str,
+    expected_action: str,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    first_path = source_path / "a.jpg"
+    second_path = source_path / "b.jpg"
+    first_path.write_bytes(b"a")
+    second_path.write_bytes(b"b")
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    first_id = orchestrator.db.add_file(job.job_id, first_path, 1, "hash-a", "image")
+    second_id = orchestrator.db.add_file(job.job_id, second_path, 1, "hash-b", "image")
+    orchestrator.db.update_file_status(first_id, FileStatus.IMPORTING)
+    orchestrator.db.update_file_status(second_id, FileStatus.IMPORTING)
+
+    first_info = orchestrator._row_to_file_info({"path": str(first_path), "size": 1, "hash": "hash-a", "media_type": "image"})
+    second_info = orchestrator._row_to_file_info({"path": str(second_path), "size": 1, "hash": "hash-b", "media_type": "image"})
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_read_report_rows",
+        lambda report_path: [{"filepath": str(first_path), "imported": "true", "error": "false", "uuid": "uuid-1"}],
+    )
+
+    processed_paths = orchestrator._apply_report(
+        job,
+        row_by_path={
+            str(first_path): {"id": first_id, "path": str(first_path)},
+            str(second_path): {"id": second_id, "path": str(second_path)},
+        },
+        staged_lookup={
+            str(first_path.resolve()): first_info,
+            str(second_path.resolve()): second_info,
+        },
+        result=SimpleNamespace(report_path=tmp_path / "report.csv", errors=[], error_count=error_count, success=success),
+    )
+
+    second_row = orchestrator.db._connection.execute(
+        "SELECT status, error_message FROM files WHERE id = ?",
+        (second_id,),
+    ).fetchone()
+    recent_logs = orchestrator.db.get_recent_logs(job.job_id, limit=10)
+
+    assert processed_paths == {str(first_path), str(second_path)}
+    assert second_row["status"] == expected_status
+    assert any(log["action"] == expected_action and log["file_id"] == second_id for log in recent_logs)

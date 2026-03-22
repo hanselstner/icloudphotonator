@@ -359,8 +359,8 @@ class ImportOrchestrator:
                 continue
 
             staged_row_by_path = {str(file_info.path): row_by_path[str(file_info.path)] for file_info, _ in staged_pairs}
-            staged_lookup = {str(staged_path): file_info for file_info, staged_path in staged_pairs}
-            staged_paths = [staged_path for _, staged_path in staged_pairs]
+            staged_lookup = {str(staged_path.resolve()): file_info for file_info, staged_path in staged_pairs}
+            staged_paths = [staged_path.resolve() for _, staged_path in staged_pairs]
             for file_info, _ in staged_pairs:
                 self.db.update_file_status(staged_row_by_path[str(file_info.path)]["id"], FileStatus.IMPORTING)
 
@@ -380,7 +380,7 @@ class ImportOrchestrator:
             processed_paths = self._apply_report(job, staged_row_by_path, staged_lookup, result)
 
             for file_info, staged_path in staged_pairs:
-                if str(file_info.path) in processed_paths and staged_path != file_info.path:
+                if staged_path != file_info.path:
                     cleanup_paths.append(staged_path)
 
             if cleanup_paths:
@@ -484,6 +484,11 @@ class ImportOrchestrator:
 
         for report_row in rows:
             staged_file = report_row.get("filepath")
+            if staged_file:
+                try:
+                    staged_file = str(Path(staged_file).resolve())
+                except OSError:
+                    pass
             if not staged_file or staged_file not in staged_lookup:
                 continue
 
@@ -506,6 +511,27 @@ class ImportOrchestrator:
             else:
                 self.db.update_file_status(file_row["id"], FileStatus.SKIPPED_DUPLICATE)
                 self.db.log_action(job.job_id, file_row["id"], "skipped_duplicate", staged_file)
+
+        if rows:
+            for orig_path, file_row in row_by_path.items():
+                if orig_path not in processed_paths:
+                    if result.error_count == 0 and result.success:
+                        self.db.update_file_status(file_row["id"], FileStatus.SKIPPED_DUPLICATE)
+                        self.db.log_action(
+                            job.job_id,
+                            file_row["id"],
+                            "skipped_unmatched",
+                            "Nicht im osxphotos-Report — wahrscheinlich Duplikat",
+                        )
+                    else:
+                        self.db.update_file_status(file_row["id"], FileStatus.ERROR, "Datei nicht im Import-Report gefunden")
+                        self.db.log_action(
+                            job.job_id,
+                            file_row["id"],
+                            "import_error",
+                            "Datei nicht im Import-Report gefunden",
+                        )
+                    processed_paths.add(orig_path)
 
         if rows:
             for err in result.errors:

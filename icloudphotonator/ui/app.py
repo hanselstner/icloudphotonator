@@ -118,8 +118,8 @@ else:
             super().__init__()
 
             self.title(APP_TITLE)
-            self.geometry("700x650")
-            self.minsize(600, 550)
+            self.geometry("700x850")
+            self.minsize(600, 700)
 
             self._source_path: Path | None = None
             self._is_running = False
@@ -156,13 +156,15 @@ else:
 
         def _build_header(self) -> None:
             header = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-            header.pack(fill="x", pady=(0, 10))
-            icon_frame = ctk.CTkFrame(header, width=50, height=50, corner_radius=14, fg_color=ACCENT_BLUE)
-            icon_frame.pack()
+            header.pack(fill="x", pady=(0, 6))
+            icon_frame = ctk.CTkFrame(header, width=40, height=40, corner_radius=12, fg_color=ACCENT_BLUE)
+            icon_frame.pack(side="left", padx=(0, 12))
             icon_frame.pack_propagate(False)
-            ctk.CTkLabel(icon_frame, text="🖼️", font=ctk.CTkFont(size=22)).pack(expand=True)
-            ctk.CTkLabel(header, text=APP_TITLE, font=ctk.CTkFont(size=22, weight="bold")).pack(pady=(8, 0))
-            ctk.CTkLabel(header, text=APP_SUBTITLE, font=ctk.CTkFont(size=12), text_color=("#4b5563", "#9ca3af")).pack()
+            ctk.CTkLabel(icon_frame, text="🖼️", font=ctk.CTkFont(size=18)).pack(expand=True)
+            text_frame = ctk.CTkFrame(header, fg_color="transparent")
+            text_frame.pack(side="left", fill="x")
+            ctk.CTkLabel(text_frame, text=APP_TITLE, font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w")
+            ctk.CTkLabel(text_frame, text=APP_SUBTITLE, font=ctk.CTkFont(size=11), text_color=("#4b5563", "#9ca3af")).pack(anchor="w")
 
         def _build_input_section(self) -> None:
             """Build the combined input section: source folder, album, library."""
@@ -251,7 +253,7 @@ else:
 
         def _build_controls(self) -> None:
             frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-            frame.pack(fill="x", pady=(0, 8))
+            frame.pack(fill="x", pady=(0, 6))
             self.start_btn = ctk.CTkButton(frame, text="▶ Start", fg_color="#28a745", hover_color="#218838", command=self._on_start, state="disabled")
             self.start_btn.pack(side="left", padx=(0, 6), expand=True, fill="x")
             self.pause_btn = ctk.CTkButton(frame, text="⏸ Pause", fg_color="#ffc107", hover_color="#e0a800", text_color="black", command=self._on_pause, state="disabled")
@@ -261,12 +263,12 @@ else:
 
         def _build_log_area(self) -> None:
             ctk.CTkLabel(self.main_frame, text="Log", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(0, 6))
-            self.log_view = LogView(self.main_frame, height=240)
+            self.log_view = LogView(self.main_frame, height=150)
             self.log_view.pack(fill="both", expand=True)
 
         def _build_footer(self) -> None:
             footer = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-            footer.pack(fill="x", pady=(12, 0))
+            footer.pack(fill="x", pady=(8, 0))
             ctk.CTkLabel(footer, text="iCloudPhotonator v0.1.0", font=ctk.CTkFont(size=11), text_color=("#6b7280", "#9ca3af")).pack(side="left")
             ctk.CTkButton(footer, text="Projektseite öffnen", font=ctk.CTkFont(size=11, underline=True), fg_color="transparent", hover=False, text_color=ACCENT_BLUE, width=20, command=lambda: webbrowser.open(REPOSITORY_URL)).pack(side="right")
 
