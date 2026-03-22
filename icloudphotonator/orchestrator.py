@@ -305,6 +305,11 @@ class ImportOrchestrator:
 
     async def _import_phase(self, job: Job):
         """Run the import loop."""
+        reset_count = self.db.reset_error_files(job.job_id)
+        if reset_count > 0:
+            self.db.log_action(job.job_id, None, "retry_errors", f"count={reset_count}")
+            self._emit_log(f"🔄 {reset_count} zuvor fehlgeschlagene Dateien werden erneut versucht.")
+
         dedup = DeduplicationEngine(self.db, job.job_id)
         self._deduplicate_pending_files(job, dedup)
 
@@ -364,7 +369,7 @@ class ImportOrchestrator:
                 staged_paths,
                 skip_dups=True,
                 auto_live=True,
-                use_exiftool=True,
+                use_exiftool=False,
                 album=self.album,
                 report_dir=None,
                 timeout=600,
@@ -471,6 +476,11 @@ class ImportOrchestrator:
     ) -> set[str]:
         processed_paths: set[str] = set()
         rows = self._read_report_rows(result.report_path) if result.report_path else []
+        logged_result_errors: set[tuple[str, str]] = set()
+
+        if result.errors:
+            for err in result.errors[:3]:
+                self._emit_log(f"❌ {err.get('error', 'Unbekannter Fehler')}")
 
         for report_row in rows:
             staged_file = report_row.get("filepath")
@@ -487,10 +497,10 @@ class ImportOrchestrator:
                 staged_lookup[staged_file] = original_info
                 DeduplicationEngine(self.db, job.job_id).mark_as_imported(original_info, report_row.get("uuid") or None)
             elif self._report_bool(report_row.get("error")):
-                message = next(
-                    (item["error"] for item in result.errors if item.get("file") == staged_file),
-                    "osxphotos reported an error",
-                )
+                matched_error = next((item for item in result.errors if item.get("file") == staged_file), None)
+                message = matched_error.get("error") if matched_error else "osxphotos reported an error"
+                if matched_error:
+                    logged_result_errors.add((matched_error.get("file") or "", message or ""))
                 self.db.update_file_status(file_row["id"], FileStatus.ERROR, message)
                 self.db.log_action(job.job_id, file_row["id"], "import_error", message)
             else:
@@ -498,11 +508,17 @@ class ImportOrchestrator:
                 self.db.log_action(job.job_id, file_row["id"], "skipped_duplicate", staged_file)
 
         if rows:
+            for err in result.errors:
+                key = (err.get("file") or "", err.get("error") or "")
+                if key in logged_result_errors:
+                    continue
+                self.db.log_action(job.job_id, None, "import_error", err.get("error") or "osxphotos reported an error")
             return processed_paths
 
         generic_error = result.errors[0]["error"] if result.errors else "Import failed without a generated report"
         for file_row in row_by_path.values():
             self.db.update_file_status(file_row["id"], FileStatus.ERROR, generic_error)
+            self.db.log_action(job.job_id, file_row["id"], "import_error", generic_error)
             processed_paths.add(file_row["path"])
         return processed_paths
 

@@ -66,10 +66,15 @@ class PhotoImporter:
         try:
             self._run_import(file_paths, skip_dups, auto_live, use_exiftool, album, report_path, timeout, library)
         except Exception as exc:
+            error_msg = str(exc).strip()
+            if not error_msg:
+                error_msg = f"{type(exc).__module__}.{type(exc).__name__}"
+                if "Abort" in type(exc).__name__:
+                    error_msg = "osxphotos aborted — möglicherweise fehlt exiftool (https://exiftool.org/)"
             return self._result_from_report(
                 report_path=report_path,
                 fallback_success=False,
-                fallback_error=f"{exc}".strip() or "osxphotos import failed",
+                fallback_error=error_msg,
                 file_count=len(file_paths),
             )
 

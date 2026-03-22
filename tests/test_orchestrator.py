@@ -302,7 +302,9 @@ async def test_import_phase_passes_library_and_album_to_importer(
     source_path = tmp_path / "photos"
     source_path.mkdir()
     file_path = source_path / "a.jpg"
+    retried_file_path = source_path / "b.jpg"
     file_path.write_bytes(b"image-bytes")
+    retried_file_path.write_bytes(b"image-bytes")
     album = "Kristins iPhone"
     library = tmp_path / "Family.photoslibrary"
     library.mkdir()
@@ -311,9 +313,13 @@ async def test_import_phase_passes_library_and_album_to_importer(
     job = Job(orchestrator.db)
     job.start(source_path)
     orchestrator.db.add_file(job.job_id, file_path, 1, "hash-a", "image")
+    error_file_id = orchestrator.db.add_file(job.job_id, retried_file_path, 1, "hash-b", "image")
+    orchestrator.db.update_file_status(error_file_id, FileStatus.ERROR, error_message="failed")
     orchestrator.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
 
     captured: dict[str, object] = {}
+    emitted_logs: list[str] = []
+    orchestrator.on_log(emitted_logs.append)
 
     monkeypatch.setattr(
         "icloudphotonator.orchestrator.DeduplicationEngine.check_duplicates",
@@ -333,8 +339,10 @@ async def test_import_phase_passes_library_and_album_to_importer(
         timeout=600,
         library=None,
     ):
+        captured["file_paths"] = file_paths
         captured["album"] = album
         captured["library"] = library
+        captured["use_exiftool"] = use_exiftool
         return SimpleNamespace(error_count=0)
 
     monkeypatch.setattr(orchestrator.staging, "stage_files", fake_stage_files)
@@ -347,5 +355,51 @@ async def test_import_phase_passes_library_and_album_to_importer(
 
     await orchestrator._import_phase(job)
 
+    assert captured["file_paths"] == [file_path, retried_file_path]
     assert captured["album"] == album
     assert captured["library"] == library
+    assert captured["use_exiftool"] is False
+    assert any("zuvor fehlgeschlagene Dateien werden erneut versucht" in message for message in emitted_logs)
+
+
+def test_apply_report_logs_result_errors_to_ui_and_db(tmp_path: Path) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_path = source_path / "a.jpg"
+    file_path.write_bytes(b"image-bytes")
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    file_id = orchestrator.db.add_file(job.job_id, file_path, 1, "hash-a", "image")
+
+    emitted_logs: list[str] = []
+    orchestrator.on_log(emitted_logs.append)
+
+    result = SimpleNamespace(
+        report_path=None,
+        errors=[
+            {"file": str(file_path), "error": "first error"},
+            {"file": str(file_path), "error": "second error"},
+            {"file": str(file_path), "error": "third error"},
+            {"file": str(file_path), "error": "fourth error"},
+        ],
+    )
+
+    processed_paths = orchestrator._apply_report(
+        job,
+        row_by_path={str(file_path): {"id": file_id, "path": str(file_path)}},
+        staged_lookup={str(file_path): orchestrator._row_to_file_info({
+            "path": str(file_path),
+            "size": 1,
+            "hash": "hash-a",
+            "media_type": "image",
+        })},
+        result=result,
+    )
+
+    recent_logs = orchestrator.db.get_recent_logs(job.job_id, limit=10)
+
+    assert processed_paths == {str(file_path)}
+    assert emitted_logs == ["❌ first error", "❌ second error", "❌ third error"]
+    assert any(log["action"] == "import_error" and log["details"] == "first error" for log in recent_logs)

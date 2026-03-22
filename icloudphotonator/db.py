@@ -78,6 +78,17 @@ class Database:
             jobs.append(job)
         return jobs
 
+    def get_latest_job(self) -> dict[str, Any] | None:
+        row = self._connection.execute(
+            """
+            SELECT *
+            FROM jobs
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        return dict(row) if row else None
+
     def update_job_state(self, job_id: str, state: JobState | str) -> None:
         state_value = state.value if isinstance(state, JobState) else state
         with self.transaction() as connection:
@@ -198,6 +209,19 @@ class Database:
             stats[row["status"]] = row["count"]
             stats["total"] += row["count"]
         return stats
+
+    def reset_error_files(self, job_id: str) -> int:
+        """Reset all error files to pending status for retry."""
+        with self.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE files
+                SET status = ?, error_message = NULL, retry_count = 0, imported_at = NULL
+                WHERE job_id = ? AND status = ?
+                """,
+                (FileStatus.PENDING.value, job_id, FileStatus.ERROR.value),
+            )
+        return int(cursor.rowcount or 0)
 
     def log_action(
         self, job_id: str, file_id: int | None, action: str, details: str | None

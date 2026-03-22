@@ -1,3 +1,5 @@
+import click
+
 from pathlib import Path
 
 from icloudphotonator.importer import PhotoImporter, find_photo_libraries
@@ -85,3 +87,28 @@ def test_import_batch_returns_failure_when_api_raises_without_report(
     assert result.error_count == len(file_paths)
     assert result.errors == [{"file": "", "error": "boom"}]
     assert result.report_path is None
+
+
+def test_import_batch_returns_descriptive_error_for_empty_abort_exception(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    file_paths = [tmp_path / "a.jpg"]
+
+    def fake_import_cli(**kwargs) -> None:
+        raise click.exceptions.Abort()
+
+    monkeypatch.setattr(PhotoImporter, "_verify_osxphotos", lambda self: None)
+    monkeypatch.setattr(PhotoImporter, "_get_import_cli", lambda self: fake_import_cli)
+
+    importer = PhotoImporter()
+    result = importer.import_batch(file_paths, report_dir=tmp_path)
+
+    assert result.success is False
+    assert result.error_count == len(file_paths)
+    assert result.errors == [
+        {
+            "file": "",
+            "error": "osxphotos aborted — möglicherweise fehlt exiftool (https://exiftool.org/)",
+        }
+    ]

@@ -9,6 +9,7 @@ def test_help_works() -> None:
     assert result.exit_code == 0
     assert "gui" in result.output
     assert "import-photos" in result.output
+    assert "retry-errors" in result.output
 
 
 def test_version_works() -> None:
@@ -97,3 +98,22 @@ def test_ui_module_imports() -> None:
     from icloudphotonator.ui.app import ICloudPhotonatorApp
 
     assert ICloudPhotonatorApp.__name__ == "ICloudPhotonatorApp"
+
+
+def test_retry_errors_resets_latest_job_error_files(tmp_path) -> None:
+    from icloudphotonator.db import Database
+    from icloudphotonator.state import FileStatus
+
+    db_path = tmp_path / "jobs.db"
+    db = Database(db_path)
+    job_id = db.create_job("/photos", {})
+    error_id = db.add_file(job_id, "/photos/a.jpg", 1, "hash-a", "image")
+    db.update_file_status(error_id, FileStatus.ERROR, error_message="failed")
+
+    result = CliRunner().invoke(main, ["retry-errors", "--db-path", str(db_path)])
+
+    assert result.exit_code == 0
+    assert job_id in result.output
+    assert "1 Fehlerdateien" in result.output
+    pending_rows = db.get_pending_files(job_id, limit=10)
+    assert [row["path"] for row in pending_rows] == ["/photos/a.jpg"]

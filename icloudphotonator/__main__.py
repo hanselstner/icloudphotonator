@@ -100,5 +100,24 @@ def import_photos(
         raise SystemExit(1) from exc
 
 
+@main.command(name="retry-errors")
+@click.option("--db-path", type=click.Path(), default=None)
+def retry_errors(db_path: str | None) -> None:
+    """Reset errored files to pending for retry."""
+    from pathlib import Path
+
+    from icloudphotonator.db import Database
+
+    db_file = Path(db_path).expanduser() if db_path else Path.home() / ".icloudphotonator" / "icloudphotonator.db"
+    db = Database(db_file)
+    latest_job = db.get_latest_job()
+    if latest_job is None:
+        click.echo("Keine Jobs gefunden.")
+        return
+
+    reset_count = db.reset_error_files(latest_job["id"])
+    click.echo(f"🔄 {reset_count} Fehlerdateien für Job {latest_job['id']} zurückgesetzt.")
+
+
 if __name__ == "__main__":
     main()
