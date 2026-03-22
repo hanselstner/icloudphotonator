@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import csv
 import json
-import shlex
-import shutil
-import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
+from importlib import import_module
 from pathlib import Path
 
 
@@ -22,18 +20,16 @@ class ImportResult:
 
 
 class PhotoImporter:
-    """Wraps osxphotos import CLI for importing photos into Apple Photos."""
+    """Wraps osxphotos' Python import API for importing photos into Apple Photos."""
 
     def __init__(self, osxphotos_path: str = "osxphotos"):
+        # Retained for backwards-compatible constructor usage.
         self.osxphotos_path = osxphotos_path
-        self._command_prefix = self._resolve_command_prefix(osxphotos_path)
         self._verify_osxphotos()
 
     def _verify_osxphotos(self):
-        """Check that osxphotos is available."""
-        result = self._run_command([*self._command_prefix, "--version"], timeout=30)
-        if result.returncode != 0:
-            raise RuntimeError(f"osxphotos is not available: {(result.stderr or result.stdout).strip()}")
+        """Check that osxphotos' import API is available."""
+        self._get_import_cli()
 
     def import_batch(
         self,
@@ -44,7 +40,7 @@ class PhotoImporter:
         report_dir: Path | None = None,
         timeout: int = 600,
     ) -> ImportResult:
-        """Import a batch of files using osxphotos import CLI."""
+        """Import a batch of files using osxphotos' in-process import API."""
         if not file_paths:
             return ImportResult(True, 0, 0, 0, [], None)
 
@@ -52,10 +48,58 @@ class PhotoImporter:
         target_report_dir.mkdir(parents=True, exist_ok=True)
         report_path = target_report_dir / f"import-report-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.csv"
 
-        cmd = self._build_command(file_paths, skip_dups, auto_live, use_exiftool, report_path)
-        completed = self._run_command(cmd, timeout)
+        try:
+            self._run_import(file_paths, skip_dups, auto_live, use_exiftool, report_path, timeout)
+        except Exception as exc:
+            return self._result_from_report(
+                report_path=report_path,
+                fallback_success=False,
+                fallback_error=f"{exc}".strip() or "osxphotos import failed",
+                file_count=len(file_paths),
+            )
+
+        return self._result_from_report(report_path=report_path, fallback_success=True)
+
+    def _run_import(
+        self,
+        file_paths: list[Path],
+        skip_dups: bool,
+        auto_live: bool,
+        use_exiftool: bool,
+        report_path: Path,
+        timeout: int,
+    ) -> None:
+        del timeout  # In-process osxphotos API does not expose timeout control.
+        import_cli = self._get_import_cli()
+        import_cli(
+            files_or_dirs=tuple(str(path) for path in file_paths),
+            skip_dups=skip_dups,
+            auto_live=auto_live,
+            exiftool=use_exiftool,
+            no_progress=True,
+            report=str(report_path),
+        )
+
+    def _get_import_cli(self):
+        try:
+            module = import_module("osxphotos.cli.import_cli")
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(f"osxphotos import API is unavailable: {exc}") from exc
+
+        try:
+            return module.import_cli
+        except AttributeError as exc:
+            raise RuntimeError("osxphotos import API is unavailable: missing import_cli()") from exc
+
+    def _result_from_report(
+        self,
+        report_path: Path,
+        fallback_success: bool,
+        fallback_error: str | None = None,
+        file_count: int = 0,
+    ) -> ImportResult:
         parsed = self._parse_report(report_path) if report_path.exists() else ImportResult(
-            success=completed.returncode == 0,
+            success=fallback_success,
             imported_count=0,
             skipped_count=0,
             error_count=0,
@@ -63,31 +107,17 @@ class PhotoImporter:
             report_path=None,
         )
 
-        if completed.returncode != 0:
-            stderr = (completed.stderr or completed.stdout or "osxphotos import failed").strip()
+        parsed.success = fallback_success and parsed.error_count == 0
+        if not fallback_success:
             parsed.success = False
             if parsed.error_count == 0:
-                parsed.error_count = len(file_paths)
-            if not parsed.errors:
-                parsed.errors.append({"file": "", "error": stderr})
-        else:
-            parsed.success = parsed.error_count == 0
+                parsed.error_count = file_count
+            if fallback_error and not parsed.errors:
+                parsed.errors.append({"file": "", "error": fallback_error})
 
         if parsed.report_path is None and report_path.exists():
             parsed.report_path = report_path
         return parsed
-
-    def _build_command(self, file_paths, skip_dups, auto_live, use_exiftool, report_path) -> list[str]:
-        """Build the osxphotos import command."""
-        cmd = [*self._command_prefix, "import", *[str(path) for path in file_paths]]
-        if skip_dups:
-            cmd.append("--skip-dups")
-        if auto_live:
-            cmd.append("--auto-live")
-        if use_exiftool:
-            cmd.append("--exiftool")
-        cmd.extend(["--verbose", "--report", str(report_path)])
-        return cmd
 
     def _parse_report(self, report_path: Path) -> ImportResult:
         """Parse osxphotos CSV report to extract results."""
@@ -118,30 +148,6 @@ class PhotoImporter:
             errors=errors,
             report_path=report_path,
         )
-
-    def _run_command(self, cmd: list[str], timeout: int) -> subprocess.CompletedProcess:
-        """Run command with timeout and error handling."""
-        try:
-            return subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout,
-            )
-        except FileNotFoundError as exc:
-            raise RuntimeError(f"Unable to execute osxphotos command: {cmd[0]}") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(f"osxphotos import timed out after {timeout} seconds") from exc
-
-    def _resolve_command_prefix(self, osxphotos_path: str) -> list[str]:
-        if " " in osxphotos_path.strip():
-            return shlex.split(osxphotos_path)
-        if resolved := shutil.which(osxphotos_path):
-            return [resolved]
-        if osxphotos_path == "osxphotos" and shutil.which("uv"):
-            return ["uv", "run", "osxphotos"]
-        raise RuntimeError("osxphotos executable was not found in PATH and uv fallback is unavailable.")
 
     def _load_report_rows(self, report_path: Path) -> list[dict]:
         if report_path.suffix.lower() == ".json":
