@@ -60,7 +60,7 @@ iCloudPhotonator combines a native SwiftUI macOS shell with a Python 3.13 backen
 | SwiftUI | - | Native macOS UI framework | Apple (bundled) | - |
 | SQLite | - | Persistent state & job tracking | Public Domain | [Link](https://www.sqlite.org/) |
 | exiftool | - | Metadata extraction | Artistic/GPL | [Link](https://exiftool.org/) |
-| py2app | - | macOS `.app` bundling | MIT | [Link](https://py2app.readthedocs.io/) |
+| PyInstaller | - | macOS `.app` bundling | GPL-2.0-or-later with bootloader exception | [Link](https://pyinstaller.org/) |
 | click | - | CLI framework | BSD-3 | [Link](https://click.palletsprojects.com/) |
 | pydantic | - | Data validation | MIT | [Link](https://docs.pydantic.dev/) |
 | websockets | - | WebSocket communication | BSD-3 | [Link](https://websockets.readthedocs.io/) |

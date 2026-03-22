@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import logging
 import os
 import re
-import signal
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
@@ -154,20 +154,12 @@ class Scanner:
         return digest.hexdigest()
 
     def _compute_hash_with_timeout(self, path: Path, timeout_seconds: int) -> str:
-        if not hasattr(signal, "SIGALRM"):
-            return self._compute_hash(path)
-
-        def _handle_timeout(signum: int, frame: object | None) -> None:
-            raise TimeoutError(f"Timed out hashing {path}")
-
-        previous_handler = signal.getsignal(signal.SIGALRM)
-        signal.signal(signal.SIGALRM, _handle_timeout)
-        signal.alarm(timeout_seconds)
-        try:
-            return self._compute_hash(path)
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, previous_handler)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self._compute_hash, path)
+            try:
+                return future.result(timeout=timeout_seconds)
+            except concurrent.futures.TimeoutError:
+                raise TimeoutError(f"Timed out hashing {path}")
 
     def _detect_live_pairs(self, files: list[FileInfo]) -> list[tuple[FileInfo, FileInfo]]:
         photos: dict[tuple[Path, str], list[FileInfo]] = {}
