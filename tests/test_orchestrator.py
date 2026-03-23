@@ -405,6 +405,74 @@ def test_apply_report_logs_result_errors_to_ui_and_db(tmp_path: Path) -> None:
     assert any(log["action"] == "import_error" and log["details"] == "first error" for log in recent_logs)
 
 
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Not authorized to send Apple events to Photos", True),
+        ("AppleEvent failed with error -1743", True),
+        ("boom", False),
+    ],
+)
+def test_is_fatal_permission_error_detects_macos_automation_failures(message: str, expected: bool) -> None:
+    assert ImportOrchestrator._is_fatal_permission_error(message) is expected
+
+
+@pytest.mark.asyncio
+async def test_import_phase_emits_permission_error_and_cancels_on_fatal_automation_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_path = source_path / "a.jpg"
+    file_path.write_bytes(b"image-bytes")
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    orchestrator._active_job = job
+    file_id = orchestrator.db.add_file(job.job_id, file_path, 1, "hash-a", "image")
+    orchestrator.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
+
+    permission_calls: list[str] = []
+    emitted_logs: list[str] = []
+    orchestrator.on_permission_error(lambda: permission_calls.append("called"))
+    orchestrator.on_log(emitted_logs.append)
+
+    monkeypatch.setattr(
+        "icloudphotonator.orchestrator.DeduplicationEngine.check_duplicates",
+        lambda self, file_infos: (file_infos, []),
+    )
+
+    async def fake_stage_files(unique_files):
+        return [(file_info, file_info.path) for file_info in unique_files], []
+
+    def fake_import_batch(file_paths, **kwargs):
+        return SimpleNamespace(
+            report_path=None,
+            errors=[{"file": str(file_path), "error": "Not authorized to send Apple events (-1743)"}],
+            error_count=1,
+            success=False,
+        )
+
+    monkeypatch.setattr(orchestrator.staging, "stage_files", fake_stage_files)
+    monkeypatch.setattr(orchestrator.importer, "import_batch", fake_import_batch)
+
+    await orchestrator._import_phase(job)
+
+    file_row = orchestrator.db._connection.execute(
+        "SELECT status, error_message FROM files WHERE id = ?",
+        (file_id,),
+    ).fetchone()
+
+    assert permission_calls == ["called"]
+    assert orchestrator._cancelled is True
+    assert orchestrator.db.get_job(job.job_id)["state"] == JobState.CANCELLED.value
+    assert file_row["status"] == FileStatus.ERROR.value
+    assert "-1743" in file_row["error_message"]
+    assert any("Automation-Berechtigung" in message for message in emitted_logs)
+
+
 @pytest.mark.asyncio
 async def test_import_phase_resolves_staged_paths_and_always_cleans_up_staged_files(
     tmp_path: Path,

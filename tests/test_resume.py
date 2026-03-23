@@ -74,3 +74,43 @@ def test_bridge_start_import_passes_library_and_album_to_worker_thread(
     assert captured["args"] == (source_path, None, library, album)
     assert captured["daemon"] is True
     assert captured["started"] is True
+
+
+def test_bridge_run_import_registers_permission_error_callback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    captured: dict[str, object] = {}
+
+    class FakeOrchestrator:
+        def __init__(self, db_path, staging_dir, active_job_path=None, library=None, album=None) -> None:
+            captured["db_path"] = db_path
+
+        def on_progress(self, callback) -> None:
+            captured["progress_callback"] = callback
+
+        def on_log(self, callback) -> None:
+            captured["log_callback"] = callback
+
+        def on_permission_error(self, callback) -> None:
+            captured["permission_callback"] = callback
+
+        def start_import(self, source_path, job_id=None):
+            captured["source_path"] = source_path
+            return "job-123"
+
+        def get_job_stats(self, job_id):
+            return {"cancelled": True, "state": "cancelled"}
+
+    permission_calls: list[str] = []
+    monkeypatch.setattr("icloudphotonator.orchestrator.ImportOrchestrator", FakeOrchestrator)
+
+    bridge = BackendBridge(db_path=tmp_path / "jobs.db")
+    bridge.set_callbacks(on_permission_error=lambda: permission_calls.append("called"))
+    bridge._run_import(source_path)
+
+    assert captured["source_path"] == source_path
+    assert callable(captured["permission_callback"])
+    captured["permission_callback"]()
+    assert permission_calls == ["called"]

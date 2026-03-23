@@ -64,6 +64,7 @@ class ImportOrchestrator:
         self._cancel_thread = threading.Event()
         self._progress_callbacks: list[Callable] = []
         self._log_callbacks: list[Callable[[str], None]] = []
+        self._permission_error_callbacks: list[Callable[[], None]] = []
         self._active_job: Job | None = None
         self._network_monitor: NetworkMonitor | None = None
         self._network_pause_requested = False
@@ -206,6 +207,10 @@ class ImportOrchestrator:
         """Register a log callback."""
         self._log_callbacks.append(callback)
 
+    def on_permission_error(self, callback: Callable[[], None]) -> None:
+        """Register a callback for fatal macOS Automation permission errors."""
+        self._permission_error_callbacks.append(callback)
+
     def _notify_progress(self, stats: dict):
         for callback in list(self._progress_callbacks):
             try:
@@ -220,6 +225,13 @@ class ImportOrchestrator:
                 callback(message)
             except Exception:
                 self.logger.exception("Log callback failed")
+
+    def _emit_permission_error(self) -> None:
+        for callback in list(self._permission_error_callbacks):
+            try:
+                callback()
+            except Exception:
+                self.logger.exception("Permission error callback failed")
 
     def _on_network_lost(self) -> None:
         if self._cancelled or self._active_job is None or self._network_pause_requested:
@@ -379,6 +391,8 @@ class ImportOrchestrator:
             cleanup_paths: list[Path] = []
             processed_paths = self._apply_report(job, staged_row_by_path, staged_lookup, result)
 
+            fatal_permission_error = self._has_only_fatal_permission_errors(getattr(result, "errors", None))
+
             for file_info, staged_path in staged_pairs:
                 if staged_path != file_info.path:
                     cleanup_paths.append(staged_path)
@@ -393,6 +407,11 @@ class ImportOrchestrator:
 
             self._sync_job_counts(job)
             self._notify_progress(self.get_job_stats(job.job_id))
+            if fatal_permission_error:
+                self._emit_log("❌ Die Automation-Berechtigung für Fotos fehlt. Import wird gestoppt.")
+                self.cancel()
+                self._emit_permission_error()
+                break
             if self._cancelled:
                 break
 
@@ -609,6 +628,17 @@ class ImportOrchestrator:
     def _read_report_rows(self, report_path: Path) -> list[dict[str, str]]:
         with Path(report_path).open(newline="", encoding="utf-8") as handle:
             return list(csv.DictReader(handle))
+
+    @staticmethod
+    def _is_fatal_permission_error(error_msg: str) -> bool:
+        normalized = str(error_msg or "")
+        lowered = normalized.lower()
+        return "-1743" in normalized or "not authorized to send apple events" in lowered
+
+    @classmethod
+    def _has_only_fatal_permission_errors(cls, errors: list[dict] | None) -> bool:
+        messages = [str(err.get("error") or "") for err in (errors or []) if str(err.get("error") or "").strip()]
+        return bool(messages) and all(cls._is_fatal_permission_error(message) for message in messages)
 
     @staticmethod
     def _report_bool(value: object) -> bool:

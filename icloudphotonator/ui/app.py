@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import webbrowser
 from pathlib import Path
 
@@ -27,6 +28,13 @@ APP_SUBTITLE = "Foto-Migration für Apple Fotos"
 REPOSITORY_URL = "https://github.com/hanselstner/icloudphototnator"
 ACCENT_BLUE = "#007AFF"
 DEFAULT_LIBRARY_OPTION = "Standard (Systemmediathek)"
+AUTOMATION_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+PERMISSION_DIALOG_TITLE = "Berechtigung erforderlich"
+PERMISSION_DIALOG_TEXT = (
+    "iCloudPhotonator benötigt die Automation-Berechtigung, um Medien an Fotos.app zu senden.\n\n"
+    "Bitte erlaube der App unter Systemeinstellungen → Datenschutz & Sicherheit → Automation den Zugriff auf Fotos.app.\n\n"
+    "Möchtest du die Systemeinstellungen jetzt öffnen?"
+)
 
 
 def build_library_options(libraries: list[Path]) -> dict[str, Path | None]:
@@ -43,6 +51,16 @@ def _raise_missing_ui_support() -> None:
         "Install a Python build with Tk support to launch the GUI."
     )
     raise RuntimeError(message) from _UI_IMPORT_ERROR
+
+
+def _open_automation_settings() -> None:
+    subprocess.run(["open", AUTOMATION_SETTINGS_URL], check=False)
+
+
+def _prompt_for_automation_permission() -> bool:
+    if messagebox is None:
+        return False
+    return bool(messagebox.askyesno(PERMISSION_DIALOG_TITLE, PERMISSION_DIALOG_TEXT, icon="warning"))
 
 
 if ctk is None or tk is None or filedialog is None or messagebox is None:
@@ -135,6 +153,7 @@ else:
                 on_log=self.add_log,
                 on_complete=self._handle_complete,
                 on_error=self._handle_error,
+                on_permission_error=self._handle_permission_error,
             )
 
             self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -378,6 +397,19 @@ else:
 
         def _handle_error(self, message: str) -> None:
             self.after(0, lambda: self._finish_run("⚠️ Fehler", f"Fehler: {message}"))
+
+        def _handle_permission_error(self) -> None:
+            def _show_dialog() -> None:
+                if self._is_running:
+                    self._bridge.stop()
+                self._finish_run(
+                    "⚠️ Berechtigung erforderlich",
+                    "Import wegen fehlender Automation-Berechtigung gestoppt.",
+                )
+                if _prompt_for_automation_permission():
+                    _open_automation_settings()
+
+            self.after(0, _show_dialog)
 
         def _finish_run(self, status_text: str, log_message: str, completed: bool = False) -> None:
             self._is_running = False
