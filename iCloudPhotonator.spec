@@ -173,6 +173,8 @@ app = BUNDLE(
         'CFBundleShortVersionString': APP_VERSION,
         'LSMinimumSystemVersion': '13.0',
         'NSHighResolutionCapable': True,
+        'NSAppleEventsUsageDescription': 'iCloudPhotonator benötigt Zugriff auf die Fotos-App, um Bilder und Videos zu importieren.',
+        'NSPhotoLibraryUsageDescription': 'iCloudPhotonator benötigt Zugriff auf Ihre Fotomediathek, um Bilder und Videos zu importieren.',
         'CFBundleDocumentTypes': [],
     },
 )
