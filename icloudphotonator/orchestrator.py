@@ -40,6 +40,9 @@ RECOVERABLE_FILE_STATUSES = {
 class ImportOrchestrator:
     """Orchestrates the full import workflow."""
 
+    MIN_SCAN_BUFFER = 50
+    SCAN_PROGRESS_LOG_INTERVAL = 25
+
     def __init__(
         self,
         db_path: Path,
@@ -91,17 +94,25 @@ class ImportOrchestrator:
             self._network_monitor.on_reconnect(self._on_network_restored)
             self._network_monitor.start()
 
+        scan_done = asyncio.Event()
+        scan_task: asyncio.Task | None = None
+
         try:
             if job_id is not None:
                 await self._resume_existing_job(job, source_path)
+                scan_done.set()
             else:
                 if job.state == JobState.IDLE:
                     job.start(source_path)
                     self._emit_log(f"Scanne Quelle: {source_path}")
-                await self._scan_phase(job, source_path)
+                scan_task = asyncio.create_task(self._scan_and_signal(job, source_path, scan_done))
+                await self._wait_for_scan_buffer(job, scan_done)
 
             if not self._cancelled and job.state != JobState.CANCELLED:
-                await self._import_phase(job)
+                await self._import_phase(job, scan_done_event=scan_done)
+
+            if scan_task is not None:
+                await scan_task
 
             if not self._cancelled and job.state not in {JobState.CANCELLED, JobState.COMPLETED}:
                 if job.state == JobState.DEDUPLICATING:
@@ -112,7 +123,13 @@ class ImportOrchestrator:
                     self._transition_job(job, JobState.VERIFYING, "verify")
                 if job.state == JobState.VERIFYING:
                     job.complete()
-                    self._emit_log("Import abgeschlossen.")
+                    stats = self.get_job_stats(job.job_id)
+                    self._emit_log(
+                        "Import abgeschlossen: "
+                        f"{stats.get('imported', 0)} importiert, "
+                        f"{stats.get('skipped', 0)} übersprungen, "
+                        f"{stats.get('errors', 0)} Fehler"
+                    )
 
             self._sync_job_counts(job)
             self._notify_progress(self.get_job_stats(job.job_id))
@@ -257,26 +274,28 @@ class ImportOrchestrator:
         """Block if paused."""
         await self._paused.wait()
 
+    async def _scan_and_signal(self, job: Job, source_path: Path, scan_done: asyncio.Event) -> None:
+        try:
+            await self._scan_phase(job, source_path)
+        finally:
+            scan_done.set()
+
+    async def _wait_for_scan_buffer(self, job: Job, scan_done: asyncio.Event) -> None:
+        while not scan_done.is_set() and not self._cancelled:
+            await self._wait_if_paused()
+            if self.db.count_files(job.job_id) >= self.MIN_SCAN_BUFFER:
+                break
+            await asyncio.sleep(0.5)
+
     async def _scan_phase(self, job: Job, source_path: Path):
         """Scan source and populate DB."""
         discovered = {"count": 0}
+        queue: asyncio.Queue[FileInfo | object] = asyncio.Queue()
+        sentinel = object()
+        loop = asyncio.get_running_loop()
 
         def _on_file(file_info: FileInfo) -> None:
-            discovered["count"] += 1
-            self._notify_progress(
-                {
-                    "job_id": job.job_id,
-                    "state": JobState.SCANNING.value,
-                    "discovered": discovered["count"],
-                    "total": discovered["count"],
-                    "duplicates": 0,
-                    "skipped": 0,
-                    "errors": 0,
-                    "remaining": 0,
-                    "scanned_files": discovered["count"],
-                    "current_file": str(file_info.path),
-                }
-            )
+            loop.call_soon_threadsafe(queue.put_nowait, file_info)
 
         def _pause_check() -> None:
             self._paused_thread.wait()
@@ -284,20 +303,25 @@ class ImportOrchestrator:
         def _cancel_check() -> bool:
             return self._cancel_thread.is_set()
 
-        try:
-            manifest = await asyncio.to_thread(
-                Scanner(source_path).scan,
-                _on_file,
-                _pause_check,
-                _cancel_check,
-            )
-        except ScanCancelledError:
-            if not self._cancelled:
-                self.cancel()
-            self._notify_progress(self.get_job_stats(job.job_id))
-            return
+        def _run_scan():
+            try:
+                return Scanner(source_path).scan(
+                    _on_file,
+                    _pause_check,
+                    _cancel_check,
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, sentinel)
 
-        for file_info in manifest.files:
+        scan_task = asyncio.create_task(asyncio.to_thread(_run_scan))
+
+        while True:
+            item = await queue.get()
+            if item is sentinel:
+                break
+
+            file_info = item
+            discovered["count"] += 1
             self.db.add_file(
                 job.job_id,
                 file_info.path,
@@ -305,6 +329,30 @@ class ImportOrchestrator:
                 file_info.hash or "",
                 file_info.media_type.value,
             )
+
+            stats = self.get_job_stats(job.job_id)
+            stats.update(
+                {
+                    "state": job.state.value,
+                    "discovered": discovered["count"],
+                    "total": max(stats.get("total", 0), discovered["count"]),
+                    "scanned_files": discovered["count"],
+                    "current_file": str(file_info.path),
+                }
+            )
+            self._notify_progress(stats)
+
+            if discovered["count"] % self.SCAN_PROGRESS_LOG_INTERVAL == 0:
+                self._emit_log(f"Scanne... {discovered['count']} Dateien gefunden.")
+
+        try:
+            manifest = await scan_task
+        except ScanCancelledError:
+            if not self._cancelled:
+                self.cancel()
+            self._notify_progress(self.get_job_stats(job.job_id))
+            return
+
         self.db.log_action(
             job.job_id,
             None,
@@ -312,38 +360,35 @@ class ImportOrchestrator:
             f"files={len(manifest.files)}; network_source={manifest.is_network_source}",
         )
         self._emit_log(f"Scan abgeschlossen: {len(manifest.files)} Dateien gefunden.")
-        self._transition_job(job, JobState.DEDUPLICATING, "dedup_ready")
+        if job.state == JobState.SCANNING:
+            self._transition_job(job, JobState.DEDUPLICATING, "dedup_ready")
         self._notify_progress(self.get_job_stats(job.job_id))
 
-    async def _import_phase(self, job: Job):
+    async def _import_phase(self, job: Job, scan_done_event: asyncio.Event | None = None):
         """Run the import loop."""
         reset_count = self.db.reset_error_files(job.job_id)
         if reset_count > 0:
             self.db.log_action(job.job_id, None, "retry_errors", f"count={reset_count}")
             self._emit_log(f"🔄 {reset_count} zuvor fehlgeschlagene Dateien werden erneut versucht.")
 
-        dedup = DeduplicationEngine(self.db, job.job_id)
-        self._deduplicate_pending_files(job, dedup)
-
         while not self._cancelled:
             await self._wait_if_paused()
             pending_rows = self.db.get_pending_files(job.job_id, limit=self.throttle.get_batch_size())
             if not pending_rows:
+                if scan_done_event is not None and not scan_done_event.is_set():
+                    await asyncio.sleep(0.1)
+                    continue
                 break
 
             file_infos = [self._row_to_file_info(row) for row in pending_rows]
-            unique_files, duplicate_files = dedup.check_duplicates(file_infos)
-            if duplicate_files:
-                self._mark_duplicates(job, duplicate_files)
 
-            if not unique_files:
-                self._sync_job_counts(job)
-                continue
+            if job.state == JobState.SCANNING:
+                self._transition_job(job, JobState.DEDUPLICATING, "dedup_ready")
 
             if job.state == JobState.DEDUPLICATING:
                 next_state = (
                     JobState.STAGING
-                    if any(self.staging._requires_staging(file_info.path) for file_info in unique_files)
+                    if any(self.staging._requires_staging(file_info.path) for file_info in file_infos)
                     else JobState.IMPORTING
                 )
                 self._transition_job(job, next_state, "staging" if next_state == JobState.STAGING else "importing")
@@ -351,7 +396,7 @@ class ImportOrchestrator:
                 self._emit_log(phase_label)
 
             row_by_path = {row["path"]: row for row in pending_rows}
-            staged_pairs, staging_failures = await self.staging.stage_files(unique_files)
+            staged_pairs, staging_failures = await self.staging.stage_files(file_infos)
             self._mark_staging_failures(job, row_by_path, staging_failures)
 
             if job.state == JobState.STAGING and staged_pairs:
@@ -359,14 +404,16 @@ class ImportOrchestrator:
                 self._emit_log("Staging abgeschlossen. Import startet.")
 
             if not staged_pairs:
-                self.throttle.report_failure(len(unique_files))
+                self.throttle.report_failure(len(file_infos))
                 self._sync_job_counts(job)
                 self._notify_progress(self.get_job_stats(job.job_id))
                 if self._cancelled:
                     break
 
                 await self._wait_if_paused()
-                if self.db.get_pending_files(job.job_id, limit=1):
+                if self.db.get_pending_files(job.job_id, limit=1) or (
+                    scan_done_event is not None and not scan_done_event.is_set()
+                ):
                     await asyncio.sleep(self.throttle.get_cooldown())
                 continue
 
@@ -401,11 +448,17 @@ class ImportOrchestrator:
                 await asyncio.to_thread(self.staging.cleanup_staged, cleanup_paths)
 
             if staging_failures or result.error_count > 0:
-                self.throttle.report_failure(len(unique_files))
+                self.throttle.report_failure(len(file_infos))
             else:
                 self.throttle.report_success(len(staged_pairs))
 
             self._sync_job_counts(job)
+            batch_stats = self._get_batch_status_counts(list(row_by_path.values()))
+            self._emit_log(
+                f"✅ {batch_stats['imported']} importiert, "
+                f"⏭️ {batch_stats['skipped']} übersprungen, "
+                f"❌ {batch_stats['errors']} Fehler"
+            )
             self._notify_progress(self.get_job_stats(job.job_id))
             if fatal_permission_error:
                 self._emit_log("❌ Die Automation-Berechtigung für Fotos fehlt. Import wird gestoppt.")
@@ -416,7 +469,9 @@ class ImportOrchestrator:
                 break
 
             await self._wait_if_paused()
-            if self.db.get_pending_files(job.job_id, limit=1):
+            if self.db.get_pending_files(job.job_id, limit=1) or (
+                scan_done_event is not None and not scan_done_event.is_set()
+            ):
                 await asyncio.sleep(self.throttle.get_cooldown())
 
     def get_job_stats(self, job_id: str) -> dict:
@@ -427,7 +482,7 @@ class ImportOrchestrator:
 
         file_stats = self.db.get_job_stats(job_id)
         duplicate_count = file_stats[FileStatus.SKIPPED_DUPLICATE.value]
-        skipped_total = file_stats[FileStatus.SKIPPED_ERROR.value]
+        skipped_total = duplicate_count + file_stats[FileStatus.SKIPPED_ERROR.value]
         remaining = sum(file_stats[status] for status in REMAINING_FILE_STATUSES)
         return {
             "job_id": job_id,
@@ -596,6 +651,29 @@ class ImportOrchestrator:
             stats[FileStatus.SKIPPED_DUPLICATE.value] + stats[FileStatus.SKIPPED_ERROR.value],
             stats[FileStatus.ERROR.value],
         )
+
+    def _get_batch_status_counts(self, file_rows: list[dict]) -> dict[str, int]:
+        if not file_rows:
+            return {"imported": 0, "skipped": 0, "errors": 0}
+
+        file_ids = [row["id"] for row in file_rows]
+        placeholders = ", ".join("?" for _ in file_ids)
+        rows = self.db._connection.execute(
+            f"SELECT status, COUNT(*) AS count FROM files WHERE id IN ({placeholders}) GROUP BY status",
+            file_ids,
+        ).fetchall()
+
+        batch_stats = {"imported": 0, "skipped": 0, "errors": 0}
+        for row in rows:
+            status = row["status"]
+            count = int(row["count"])
+            if status == FileStatus.IMPORTED.value:
+                batch_stats["imported"] += count
+            elif status in {FileStatus.SKIPPED_DUPLICATE.value, FileStatus.SKIPPED_ERROR.value}:
+                batch_stats["skipped"] += count
+            elif status == FileStatus.ERROR.value:
+                batch_stats["errors"] += count
+        return batch_stats
 
     def _recover_file_statuses(self, job_id: str) -> int:
         placeholders = ", ".join("?" for _ in RECOVERABLE_FILE_STATUSES)

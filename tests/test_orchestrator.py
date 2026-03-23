@@ -84,7 +84,7 @@ async def test_start_import_cancel_during_scan_stops_cleanly(
                 raise ScanCancelledError("scan cancelled")
             threading.Event().wait(0.01)
 
-    async def fail_import(self, job) -> None:
+    async def fail_import(self, job, scan_done_event=None) -> None:
         raise AssertionError("import phase should not run after scan cancellation")
 
     monkeypatch.setattr("icloudphotonator.orchestrator.Scanner._is_network_path", lambda self, path: False)
@@ -134,7 +134,7 @@ async def _complete_scan(self, job, source_path: Path) -> None:
     self.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
 
 
-async def _complete_import(self, job) -> None:
+async def _complete_import(self, job, scan_done_event=None) -> None:
     self.db.update_job_state(job.job_id, JobState.VERIFYING)
 
 
@@ -194,7 +194,7 @@ async def test_start_import_defaults_album_from_source_folder_name(
     monkeypatch.setattr("icloudphotonator.orchestrator.Scanner._is_network_path", lambda self, path: False)
     monkeypatch.setattr(ImportOrchestrator, "_scan_phase", _complete_scan)
 
-    async def capture_import(self, job) -> None:
+    async def capture_import(self, job, scan_done_event=None) -> None:
         seen["album"] = self.album
         self.db.update_job_state(job.job_id, JobState.VERIFYING)
 
@@ -233,10 +233,12 @@ async def test_resume_existing_job_requeues_files_skips_scan_and_clears_active_j
     async def fail_scan(self, job, source_path: Path) -> None:
         raise AssertionError("scan phase should be skipped for persisted jobs")
 
-    async def complete_import(self, job) -> None:
+    async def complete_import(self, job, scan_done_event=None) -> None:
         pending_rows = self.db.get_pending_files(job.job_id, limit=10)
         seen_pending["statuses"] = [row["status"] for row in pending_rows]
         seen_pending["paths"] = [Path(row["path"]).name for row in pending_rows]
+        assert scan_done_event is not None
+        assert scan_done_event.is_set() is True
         active_payload = load_active_job(active_job_path)
         assert active_payload is not None
         assert active_payload["job_id"] == job.job_id
@@ -277,7 +279,7 @@ async def test_resume_existing_job_scans_when_no_files_exist(
         self.db.add_file(job.job_id, source_path / "new.jpg", 1, "hash-new", "image")
         self.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
 
-    async def complete_import(self, job) -> None:
+    async def complete_import(self, job, scan_done_event=None) -> None:
         calls["import"] += 1
         for row in self.db.get_pending_files(job.job_id, limit=10):
             self.db.update_file_status(row["id"], FileStatus.IMPORTED)
@@ -360,6 +362,177 @@ async def test_import_phase_passes_library_and_album_to_importer(
     assert captured["library"] == library
     assert captured["use_exiftool"] is False
     assert any("zuvor fehlgeschlagene Dateien werden erneut versucht" in message for message in emitted_logs)
+
+
+@pytest.mark.asyncio
+async def test_start_import_runs_scan_and_import_in_pipeline_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_paths = []
+    for index in range(3):
+        file_path = source_path / f"{index}.jpg"
+        file_path.write_bytes(b"image-bytes")
+        file_paths.append(file_path)
+
+    import_started = threading.Event()
+    scan_finished = threading.Event()
+
+    def fake_scan(self, progress_callback=None, pause_check=None, cancel_check=None):
+        manifests = []
+        for path in file_paths[:2]:
+            stat_result = path.stat()
+            file_info = ImportOrchestrator(tmp_path / "unused.db")._row_to_file_info(
+                {"path": str(path), "size": stat_result.st_size, "hash": "hash", "media_type": "image"}
+            )
+            manifests.append(file_info)
+            progress_callback(file_info)
+        assert import_started.wait(1), "import should begin before scan completes"
+        for path in file_paths[2:]:
+            stat_result = path.stat()
+            file_info = ImportOrchestrator(tmp_path / "unused.db")._row_to_file_info(
+                {"path": str(path), "size": stat_result.st_size, "hash": "hash", "media_type": "image"}
+            )
+            manifests.append(file_info)
+            progress_callback(file_info)
+        scan_finished.set()
+        return SimpleNamespace(files=manifests, is_network_source=False)
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    monkeypatch.setattr(orchestrator, "MIN_SCAN_BUFFER", 2)
+    monkeypatch.setattr("icloudphotonator.orchestrator.Scanner._is_network_path", lambda self, path: False)
+    monkeypatch.setattr("icloudphotonator.orchestrator.Scanner.scan", fake_scan)
+    monkeypatch.setattr(orchestrator.throttle, "get_batch_size", lambda: 2)
+    monkeypatch.setattr(orchestrator.throttle, "get_cooldown", lambda: 0)
+
+    async def fake_stage_files(unique_files):
+        return [(file_info, file_info.path) for file_info in unique_files], []
+
+    def fake_import_batch(file_paths, **kwargs):
+        import_started.set()
+        return SimpleNamespace(report_path=None, errors=[], error_count=0, success=True)
+
+    def fake_apply_report(job, row_by_path, staged_lookup, result):
+        for row in row_by_path.values():
+            orchestrator.db.update_file_status(row["id"], FileStatus.IMPORTED)
+        return {row["path"] for row in row_by_path.values()}
+
+    monkeypatch.setattr(orchestrator.staging, "stage_files", fake_stage_files)
+    monkeypatch.setattr(orchestrator.importer, "import_batch", fake_import_batch)
+    monkeypatch.setattr(orchestrator, "_apply_report", fake_apply_report)
+
+    job_id = await orchestrator.start_import(source_path)
+
+    assert import_started.is_set() is True
+    assert scan_finished.is_set() is True
+    assert orchestrator.db.get_job(job_id)["state"] == JobState.COMPLETED.value
+    assert orchestrator.db.get_job_stats(job_id)[FileStatus.IMPORTED.value] == 3
+
+
+@pytest.mark.asyncio
+async def test_start_import_waits_for_small_scan_to_finish_before_import(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_paths = []
+    for index in range(2):
+        file_path = source_path / f"{index}.jpg"
+        file_path.write_bytes(b"image-bytes")
+        file_paths.append(file_path)
+
+    scan_finished = threading.Event()
+    saw_finished_scan: dict[str, bool] = {"value": False}
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    monkeypatch.setattr(orchestrator, "MIN_SCAN_BUFFER", 5)
+    monkeypatch.setattr("icloudphotonator.orchestrator.Scanner._is_network_path", lambda self, path: False)
+    monkeypatch.setattr(orchestrator.throttle, "get_batch_size", lambda: 10)
+    monkeypatch.setattr(orchestrator.throttle, "get_cooldown", lambda: 0)
+
+    def fake_scan(self, progress_callback=None, pause_check=None, cancel_check=None):
+        manifests = []
+        for path in file_paths:
+            stat_result = path.stat()
+            file_info = orchestrator._row_to_file_info(
+                {"path": str(path), "size": stat_result.st_size, "hash": "hash", "media_type": "image"}
+            )
+            manifests.append(file_info)
+            progress_callback(file_info)
+        scan_finished.set()
+        return SimpleNamespace(files=manifests, is_network_source=False)
+
+    async def fake_stage_files(unique_files):
+        return [(file_info, file_info.path) for file_info in unique_files], []
+
+    def fake_import_batch(file_paths, **kwargs):
+        saw_finished_scan["value"] = scan_finished.is_set()
+        return SimpleNamespace(report_path=None, errors=[], error_count=0, success=True)
+
+    def fake_apply_report(job, row_by_path, staged_lookup, result):
+        for row in row_by_path.values():
+            orchestrator.db.update_file_status(row["id"], FileStatus.IMPORTED)
+        return {row["path"] for row in row_by_path.values()}
+
+    monkeypatch.setattr("icloudphotonator.orchestrator.Scanner.scan", fake_scan)
+    monkeypatch.setattr(orchestrator.staging, "stage_files", fake_stage_files)
+    monkeypatch.setattr(orchestrator.importer, "import_batch", fake_import_batch)
+    monkeypatch.setattr(orchestrator, "_apply_report", fake_apply_report)
+
+    job_id = await orchestrator.start_import(source_path)
+
+    assert saw_finished_scan["value"] is True
+    assert orchestrator.db.get_job(job_id)["state"] == JobState.COMPLETED.value
+
+
+@pytest.mark.asyncio
+async def test_import_phase_emits_batch_summary_from_db_statuses(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_paths = [source_path / name for name in ("a.jpg", "b.jpg", "c.jpg")]
+    for file_path in file_paths:
+        file_path.write_bytes(b"image-bytes")
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    for index, file_path in enumerate(file_paths):
+        orchestrator.db.add_file(job.job_id, file_path, index + 1, f"hash-{index}", "image")
+    orchestrator.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
+
+    emitted_logs: list[str] = []
+    orchestrator.on_log(emitted_logs.append)
+
+    monkeypatch.setattr(
+        "icloudphotonator.orchestrator.DeduplicationEngine.check_duplicates",
+        lambda self, file_infos: (file_infos, []),
+    )
+
+    async def fake_stage_files(unique_files):
+        return [(file_info, file_info.path) for file_info in unique_files], []
+
+    def fake_import_batch(file_paths, **kwargs):
+        return SimpleNamespace(error_count=1, errors=[], success=False)
+
+    def fake_apply_report(job, staged_row_by_path, staged_lookup, result):
+        rows = list(staged_row_by_path.values())
+        orchestrator.db.update_file_status(rows[0]["id"], FileStatus.IMPORTED)
+        orchestrator.db.update_file_status(rows[1]["id"], FileStatus.SKIPPED_DUPLICATE)
+        orchestrator.db.update_file_status(rows[2]["id"], FileStatus.ERROR, "kaputt")
+        return {row["path"] for row in rows}
+
+    monkeypatch.setattr(orchestrator.staging, "stage_files", fake_stage_files)
+    monkeypatch.setattr(orchestrator.importer, "import_batch", fake_import_batch)
+    monkeypatch.setattr(orchestrator, "_apply_report", fake_apply_report)
+
+    await orchestrator._import_phase(job)
+
+    assert "✅ 1 importiert, ⏭️ 1 übersprungen, ❌ 1 Fehler" in emitted_logs
 
 
 def test_apply_report_logs_result_errors_to_ui_and_db(tmp_path: Path) -> None:
@@ -639,3 +812,39 @@ def test_apply_report_marks_unmatched_files_instead_of_leaving_them_importing(
     assert processed_paths == {str(first_path), str(second_path)}
     assert second_row["status"] == expected_status
     assert any(log["action"] == expected_action and log["file_id"] == second_id for log in recent_logs)
+
+
+@pytest.mark.asyncio
+async def test_start_import_emits_completion_summary_with_counts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+
+    emitted_logs: list[str] = []
+
+    monkeypatch.setattr("icloudphotonator.orchestrator.Scanner._is_network_path", lambda self, path: False)
+
+    async def complete_scan(self, job, source_path: Path) -> None:
+        self.db.add_file(job.job_id, source_path / "a.jpg", 1, "hash-a", "image")
+        self.db.add_file(job.job_id, source_path / "b.jpg", 1, "hash-b", "image")
+        self.db.add_file(job.job_id, source_path / "c.jpg", 1, "hash-c", "image")
+        self.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
+
+    async def complete_import(self, job, scan_done_event=None) -> None:
+        pending_rows = self.db.get_pending_files(job.job_id, limit=10)
+        self.db.update_file_status(pending_rows[0]["id"], FileStatus.IMPORTED)
+        self.db.update_file_status(pending_rows[1]["id"], FileStatus.SKIPPED_DUPLICATE)
+        self.db.update_file_status(pending_rows[2]["id"], FileStatus.ERROR, "kaputt")
+        self.db.update_job_state(job.job_id, JobState.VERIFYING)
+
+    monkeypatch.setattr(ImportOrchestrator, "_scan_phase", complete_scan)
+    monkeypatch.setattr(ImportOrchestrator, "_import_phase", complete_import)
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    orchestrator.on_log(emitted_logs.append)
+
+    await orchestrator.start_import(source_path)
+
+    assert "Import abgeschlossen: 1 importiert, 1 übersprungen, 1 Fehler" in emitted_logs

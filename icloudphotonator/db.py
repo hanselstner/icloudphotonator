@@ -198,6 +198,13 @@ class Database:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def count_files(self, job_id: str) -> int:
+        row = self._connection.execute(
+            "SELECT COUNT(*) AS count FROM files WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        return int(row["count"] if row else 0)
+
     def get_job_stats(self, job_id: str) -> dict[str, int]:
         stats = {status.value: 0 for status in FileStatus}
         stats["total"] = 0

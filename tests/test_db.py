@@ -48,6 +48,16 @@ def test_get_pending_files_returns_only_pending(tmp_path: Path) -> None:
     assert all(item["status"] == FileStatus.PENDING.value for item in pending_files)
 
 
+def test_count_files_counts_all_rows_for_job(tmp_path: Path) -> None:
+    db = Database(tmp_path / "jobs.db")
+    job_id = db.create_job("/photos", {})
+
+    db.add_file(job_id, "/photos/a.jpg", 123, "hash-a", "image")
+    db.add_file(job_id, "/photos/b.jpg", 456, "hash-b", "image")
+
+    assert db.count_files(job_id) == 2
+
+
 def test_job_stats_counts_statuses(tmp_path: Path) -> None:
     db = Database(tmp_path / "jobs.db")
     job_id = db.create_job("/photos", {})
