@@ -26,6 +26,10 @@ class Database:
         with self._connection:
             yield self._connection
 
+    def checkpoint(self) -> None:
+        """Force WAL checkpoint to persist data to main DB file."""
+        self._connection.execute("PRAGMA wal_checkpoint(PASSIVE)")
+
     def create_job(self, source_path: str | Path, config: dict[str, Any] | None) -> str:
         job_id = str(uuid4())
         now = self._now()
@@ -253,6 +257,14 @@ class Database:
             (job_id, limit),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def close(self) -> None:
+        """Checkpoint WAL and close connection."""
+        try:
+            self.checkpoint()
+        except Exception:
+            pass
+        self._connection.close()
 
     def _create_tables(self) -> None:
         with self.transaction() as connection:

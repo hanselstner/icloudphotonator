@@ -143,6 +143,10 @@ class ImportOrchestrator:
                 self.db.log_action(job.job_id, None, "error", str(exc))
             raise
         finally:
+            try:
+                self.db.checkpoint()
+            except Exception:
+                pass
             self._stop_network_monitor()
             if self._active_job is not None:
                 if self._active_job.state in {JobState.COMPLETED, JobState.CANCELLED}:
@@ -163,7 +167,8 @@ class ImportOrchestrator:
             job.resume()
             self._emit_log("Import wird fortgesetzt.")
 
-        if job.stats["total"] == 0:
+        actual_count = self.db.count_files(job.job_id)
+        if actual_count == 0:
             self._set_job_state(job, JobState.SCANNING, "resume_scan", str(source_path))
             self._emit_log(f"Scanne Quelle: {source_path}")
             await self._scan_phase(job, source_path)
@@ -329,6 +334,8 @@ class ImportOrchestrator:
                 file_info.hash or "",
                 file_info.media_type.value,
             )
+            if discovered["count"] % 500 == 0:
+                self.db.checkpoint()
 
             stats = self.get_job_stats(job.job_id)
             stats.update(
@@ -344,6 +351,28 @@ class ImportOrchestrator:
 
             if discovered["count"] % self.SCAN_PROGRESS_LOG_INTERVAL == 0:
                 self._emit_log(f"Scanne... {discovered['count']} Dateien gefunden.")
+
+        while not queue.empty():
+            try:
+                item = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+            if item is sentinel:
+                continue
+
+            file_info = item
+            discovered["count"] += 1
+            self.db.add_file(
+                job.job_id,
+                file_info.path,
+                file_info.size,
+                file_info.hash or "",
+                file_info.media_type.value,
+            )
+
+        if discovered["count"] > 0:
+            self.db.checkpoint()
 
         try:
             manifest = await scan_task

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import webbrowser
 from pathlib import Path
@@ -20,6 +21,7 @@ else:
     _UI_IMPORT_ERROR = None
 
 from icloudphotonator.importer import find_photo_libraries
+from icloudphotonator.persistence import APP_DIR
 
 from .bridge import BackendBridge
 
@@ -34,6 +36,17 @@ PERMISSION_DIALOG_TEXT = (
     "iCloudPhotonator benötigt die Automation-Berechtigung, um Medien an Fotos.app zu senden.\n\n"
     "Bitte erlaube der App unter Systemeinstellungen → Datenschutz & Sicherheit → Automation den Zugriff auf Fotos.app.\n\n"
     "Möchtest du die Systemeinstellungen jetzt öffnen?"
+)
+ONBOARDING_CONFIG_PATH = APP_DIR / "config.json"
+ONBOARDING_DIALOG_TITLE = "Willkommen bei iCloudPhotonator"
+ONBOARDING_DIALOG_TEXT = (
+    "Für den Import Ihrer Fotos benötigt iCloudPhotonator folgende Berechtigungen:\n\n"
+    "1️⃣  Automation (Fotos-App)\n"
+    "     Erlaubt der App, Fotos in die Fotos-App zu importieren.\n\n"
+    "2️⃣  Fotomediathek\n"
+    "     Erlaubt der App, auf Ihre Fotomediathek zuzugreifen.\n\n"
+    "macOS wird Sie gleich nach diesen Berechtigungen fragen.\n"
+    "Bitte bestätigen Sie jeweils mit „OK“."
 )
 
 
@@ -63,6 +76,49 @@ def _prompt_for_automation_permission() -> bool:
     return bool(messagebox.askyesno(PERMISSION_DIALOG_TITLE, PERMISSION_DIALOG_TEXT, icon="warning"))
 
 
+def _check_automation_permission() -> bool:
+    """Check whether the Photos Automation permission has already been granted."""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", 'tell application "Photos" to get name'],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        return False
+    return result.returncode == 0
+
+
+def _check_onboarding_done() -> bool:
+    """Check whether the first-launch permission onboarding is already complete."""
+    if not ONBOARDING_CONFIG_PATH.exists():
+        return False
+
+    try:
+        config = json.loads(ONBOARDING_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return False
+
+    return isinstance(config, dict) and bool(config.get("onboarding_done", False))
+
+
+def _mark_onboarding_done() -> None:
+    """Persist completion of the first-launch permission onboarding."""
+    ONBOARDING_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    config: dict[str, object] = {}
+    if ONBOARDING_CONFIG_PATH.exists():
+        try:
+            payload = json.loads(ONBOARDING_CONFIG_PATH.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError):
+            payload = {}
+        if isinstance(payload, dict):
+            config = payload
+
+    config["onboarding_done"] = True
+    ONBOARDING_CONFIG_PATH.write_text(json.dumps(config), encoding="utf-8")
+
+
 if ctk is None or tk is None or filedialog is None or messagebox is None:
 
     class StatsCard:
@@ -84,6 +140,21 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
 
         def __init__(self, *args, **kwargs) -> None:
             _raise_missing_ui_support()
+
+        def _show_onboarding(self) -> None:
+            if _check_onboarding_done():
+                return
+            messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
+            self.add_log("Prüfe Automation-Berechtigung...")
+            if _check_automation_permission():
+                self.add_log("✅ Automation-Berechtigung erteilt.")
+            else:
+                self.add_log("⚠️ Automation-Berechtigung wurde nicht erteilt.")
+            _mark_onboarding_done()
+
+        def _run_startup_sequence(self) -> None:
+            self._show_onboarding()
+            self._check_for_incomplete_jobs()
 
 
     def main() -> None:
@@ -160,7 +231,25 @@ else:
             self._build_ui()
             self._set_status("⏸ Bereit")
             self.add_log("Anwendung bereit.")
-            self.after(0, self._check_for_incomplete_jobs)
+            self.after(0, self._run_startup_sequence)
+
+        def _run_startup_sequence(self) -> None:
+            """Run startup checks in order: onboarding first, resume checks second."""
+            self._show_onboarding()
+            self._check_for_incomplete_jobs()
+
+        def _show_onboarding(self) -> None:
+            """Show the first-launch permission onboarding before the first import."""
+            if _check_onboarding_done():
+                return
+
+            messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
+            self.add_log("Prüfe Automation-Berechtigung...")
+            if _check_automation_permission():
+                self.add_log("✅ Automation-Berechtigung erteilt.")
+            else:
+                self.add_log("⚠️ Automation-Berechtigung wurde nicht erteilt.")
+            _mark_onboarding_done()
 
         def _build_ui(self) -> None:
             self.main_frame = ctk.CTkFrame(self, fg_color="transparent")

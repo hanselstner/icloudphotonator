@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,7 +11,7 @@ from icloudphotonator.importer import PhotoImporter
 from icloudphotonator.job import Job
 from icloudphotonator.orchestrator import ImportOrchestrator
 from icloudphotonator.persistence import load_active_job
-from icloudphotonator.scanner import ScanCancelledError
+from icloudphotonator.scanner import FileInfo, MediaType, ScanCancelledError
 from icloudphotonator.staging import StagingManager
 from icloudphotonator.state import FileStatus, JobState
 from icloudphotonator.throttle import ThrottleController
@@ -103,6 +104,27 @@ async def test_start_import_cancel_during_scan_stops_cleanly(
     assert orchestrator.db.get_job(job_id)["state"] == JobState.CANCELLED.value
     assert orchestrator.db.get_job_stats(job_id)["total"] == 0
     assert active_job_path.exists() is False
+
+
+@pytest.mark.asyncio
+async def test_start_import_checkpoints_db_on_shutdown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    checkpoint_calls: list[str] = []
+
+    monkeypatch.setattr("icloudphotonator.orchestrator.Scanner._is_network_path", lambda self, path: False)
+    monkeypatch.setattr(ImportOrchestrator, "_scan_phase", _complete_scan)
+    monkeypatch.setattr(ImportOrchestrator, "_import_phase", _complete_import)
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    monkeypatch.setattr(orchestrator.db, "checkpoint", lambda: checkpoint_calls.append("called"))
+
+    await orchestrator.start_import(source_path)
+
+    assert checkpoint_calls == ["called"]
 
 
 class StubNetworkMonitor:
@@ -294,6 +316,127 @@ async def test_resume_existing_job_scans_when_no_files_exist(
 
     assert calls == {"scan": 1, "import": 1}
     assert db.get_job(job_id)["state"] == JobState.COMPLETED.value
+
+
+@pytest.mark.asyncio
+async def test_resume_existing_job_skips_rescan_when_file_rows_exist_but_total_counter_is_zero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_path = source_path / "persisted.jpg"
+    file_path.write_bytes(b"image-bytes")
+
+    db = Database(tmp_path / "jobs.db")
+    job_id = db.create_job(source_path, {})
+    db.update_job_state(job_id, JobState.ERROR)
+    file_id = db.add_file(job_id, file_path, 1, "hash-persisted", "image")
+    db._connection.execute("UPDATE jobs SET total_files = 0 WHERE id = ?", (job_id,))
+    db._connection.commit()
+
+    calls = {"import": 0}
+
+    async def fail_scan(self, job, source_path: Path) -> None:
+        raise AssertionError("scan phase should be skipped when persisted file rows exist")
+
+    async def complete_import(self, job, scan_done_event=None) -> None:
+        calls["import"] += 1
+        pending_rows = self.db.get_pending_files(job.job_id, limit=10)
+        assert [row["id"] for row in pending_rows] == [file_id]
+        self.db.update_file_status(file_id, FileStatus.IMPORTED)
+        self.db.update_job_state(job.job_id, JobState.VERIFYING)
+
+    monkeypatch.setattr(ImportOrchestrator, "_scan_phase", fail_scan)
+    monkeypatch.setattr(ImportOrchestrator, "_import_phase", complete_import)
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db", active_job_path=tmp_path / "active_job.json")
+
+    await orchestrator.start_import(source_path, job_id=job_id)
+
+    assert calls == {"import": 1}
+    assert db.get_job(job_id)["state"] == JobState.COMPLETED.value
+    assert db.get_job_stats(job_id)[FileStatus.IMPORTED.value] == 1
+
+
+@pytest.mark.asyncio
+async def test_scan_phase_drains_remaining_queue_items_before_cancel_returns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_paths = [source_path / name for name in ("a.jpg", "b.jpg")]
+    for file_path in file_paths:
+        file_path.write_bytes(b"image-bytes")
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    orchestrator._active_job = job
+    timestamp = datetime.now()
+    file_infos = [
+        FileInfo(
+            path=file_path,
+            size=file_path.stat().st_size,
+            hash=f"hash-{index}",
+            created=timestamp,
+            modified=timestamp,
+            media_type=MediaType.PHOTO,
+            format="JPG",
+        )
+        for index, file_path in enumerate(file_paths)
+    ]
+
+    class SentinelFirstQueue:
+        def __init__(self) -> None:
+            self._items: list[object] = []
+            self._event = asyncio.Event()
+
+        def put_nowait(self, item: object) -> None:
+            if isinstance(item, FileInfo):
+                self._items.append(item)
+            else:
+                self._items.insert(0, item)
+            self._event.set()
+
+        async def get(self) -> object:
+            while not self._items:
+                await self._event.wait()
+                if not self._items:
+                    self._event = asyncio.Event()
+            item = self._items.pop(0)
+            if not self._items:
+                self._event = asyncio.Event()
+            return item
+
+        def get_nowait(self) -> object:
+            if not self._items:
+                raise asyncio.QueueEmpty
+            item = self._items.pop(0)
+            if not self._items:
+                self._event = asyncio.Event()
+            return item
+
+        def empty(self) -> bool:
+            return not self._items
+
+    def fake_scan(self, progress_callback=None, pause_check=None, cancel_check=None):
+        for file_info in file_infos:
+            progress_callback(file_info)
+        raise ScanCancelledError("scan cancelled after queueing files")
+
+    checkpoint_counts: list[int] = []
+    monkeypatch.setattr("icloudphotonator.orchestrator.asyncio.Queue", SentinelFirstQueue)
+    monkeypatch.setattr("icloudphotonator.orchestrator.Scanner.scan", fake_scan)
+    monkeypatch.setattr(orchestrator.db, "checkpoint", lambda: checkpoint_counts.append(orchestrator.db.count_files(job.job_id)))
+
+    await orchestrator._scan_phase(job, source_path)
+
+    assert orchestrator.db.get_job_stats(job.job_id)["total"] == 2
+    assert checkpoint_counts == [2]
+    assert orchestrator._cancelled is True
+    assert orchestrator.db.get_job(job.job_id)["state"] == JobState.CANCELLED.value
 
 
 @pytest.mark.asyncio

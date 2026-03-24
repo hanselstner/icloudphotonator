@@ -1,5 +1,8 @@
 import json
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from icloudphotonator.db import Database
 from icloudphotonator.state import FileStatus, JobState
@@ -144,3 +147,15 @@ def test_reset_error_files_requeues_only_error_rows(tmp_path: Path) -> None:
         "error_message": None,
         "retry_count": 0,
     }
+
+
+def test_checkpoint_and_close_methods(tmp_path: Path) -> None:
+    db = Database(tmp_path / "jobs.db")
+    job_id = db.create_job("/photos", {})
+
+    db.add_file(job_id, "/photos/a.jpg", 123, "hash-a", "image")
+    db.checkpoint()
+    db.close()
+
+    with pytest.raises(sqlite3.ProgrammingError):
+        db.get_job(job_id)
