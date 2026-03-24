@@ -3,8 +3,10 @@
 ![Python](https://img.shields.io/badge/Python-3.13+-blue?logo=python&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-13%2B-black?logo=apple&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![osxphotos](https://img.shields.io/badge/osxphotos-0.75.6-orange)
-![Status](https://img.shields.io/badge/Status-In%20Development-yellow)
+![osxphotos](https://img.shields.io/badge/osxphotos-powered-orange)
+![Status](https://img.shields.io/badge/Status-Beta-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-215%20passing-brightgreen)
+![Build](https://img.shields.io/badge/Build-PyInstaller-blue)
 
 **Intelligenter Foto-Migrationshelfer für macOS.**
 
@@ -28,6 +30,11 @@ iCloudPhotonator importiert große Foto- und Videoarchive von NAS-Systemen, exte
 - 🔄 **Fortsetzen nach Unterbrechung**: Unvollständige Jobs werden erkannt und können wieder aufgenommen werden.
 - 🌐 **Netzlaufwerk-Support**: NAS- und andere Netzwerkquellen werden mit lokalem Staging stabil verarbeitet.
 - 📊 **Transparente Fortschrittsanzeige**: Entdeckt, importiert, übersprungen, Duplikate, Fehler und verbleibende Dateien sind jederzeit sichtbar.
+- 🚀 **Pipeline-Modus**: Scan und Import laufen parallel — der Import startet bereits nach den ersten 50 gescannten Dateien.
+- 📊 **Batch-Zusammenfassung**: Nach jedem Batch und am Ende des Jobs werden importierte, übersprungene und fehlerhafte Dateien klar aufgeschlüsselt.
+- 🔐 **Berechtigungs-Onboarding**: Beim ersten Start führt die App durch die nötigen macOS-Berechtigungen (Automation, Fotomediathek).
+- ⚠️ **Intelligente Fehlererkennung**: Fatale Fehler wie fehlende Automation-Berechtigung werden sofort erkannt und der Import sauber gestoppt.
+- 💾 **Datensicherheit**: WAL-Checkpoints alle 500 Dateien und beim Beenden — kein Datenverlust bei App-Abbruch.
 
 ## ⚡ Intelligentes Datenmanagement
 
@@ -181,6 +188,18 @@ Wichtige Implementierungsbausteine:
 - `resilience.py` — Retry-Logik und Netzwerküberwachung
 - `orchestrator.py` — durchgehender Workflow von Scan bis Abschluss
 
+## Open-Source-Abhängigkeiten
+
+| Paket | Zweck | Lizenz |
+|-------|-------|--------|
+| [osxphotos](https://github.com/RhetTbull/osxphotos) | Import-Engine für Apple Fotos via AppleScript | MIT |
+| [customtkinter](https://github.com/TomSchimansky/CustomTkinter) | Moderne Desktop-GUI für Tkinter | MIT |
+| [click](https://github.com/pallets/click) | CLI-Framework | BSD-3-Clause |
+| [pydantic](https://github.com/pydantic/pydantic) | Datenvalidierung und Settings | MIT |
+| [PyInstaller](https://github.com/pyinstaller/pyinstaller) | Bundling als macOS-`.app` | GPL-2.0 (mit Bootloader-Ausnahme) |
+| [pytest](https://github.com/pytest-dev/pytest) | Test-Framework | MIT |
+| [SQLite](https://sqlite.org/) | Eingebettete Datenbank (Python-Standardbibliothek) | Public Domain |
+
 ## Entwicklung
 
 ```bash
@@ -190,6 +209,35 @@ cd icloudphototnator
 uv sync
 uv run python -m pytest tests/ -q --tb=short
 ```
+
+## Changelog
+
+### v0.1.0-beta — März 2026
+
+#### Neue Funktionen
+- **Pipeline-Modus**: Scan und Import laufen parallel. Der Import startet nach den ersten 50 gescannten Dateien, statt auf den vollständigen Scan zu warten.
+- **Batch-Zusammenfassung im Log**: Nach jedem Batch zeigt die App: ✅ X importiert, ⏭️ Y übersprungen, ❌ Z Fehler. Am Ende des Jobs erscheint eine Gesamtzusammenfassung.
+- **Berechtigungs-Onboarding**: Beim ersten Start erklärt ein Dialog die benötigten macOS-Berechtigungen und führt den Nutzer durch die Freigabe.
+- **Automation-Fehlererkennung**: Der macOS-Fehler `-1743` (fehlende Automation-Berechtigung) wird beim ersten Auftreten erkannt. Der Import stoppt sofort, ein Dialog erklärt das Problem und öffnet die Systemeinstellungen.
+- **Auto-Album**: Standardmäßig wird ein Album mit dem Namen des Quellordners angelegt.
+- **Mediathek-Auswahl**: Ziel-Mediathek direkt in der GUI oder per CLI wählbar.
+- **Pause/Fortsetzen/Abbrechen**: Funktioniert sowohl während des Scans als auch im Import.
+- **Live-Photo-Erkennung**: Foto-/Video-Paare mit gleichem Basisnamen werden als Live Photos importiert.
+- **Netzwerk-Resilienz**: Automatische Pause bei Verbindungsverlust, Wiederaufnahme bei Reconnect.
+- **Adaptives Batching**: Batch-Größe passt sich dynamisch an (5–50 Dateien), mit Cooldowns.
+
+#### Fehlerbehebungen
+- **Datenverlust bei App-Beendigung verhindert**: WAL-Checkpoints alle 500 Dateien und beim Shutdown. Resume nutzt die tatsächliche Datei-Anzahl in der DB statt des Job-Counters.
+- **Pfad-Mismatch `/var` vs `/private/var`**: macOS-Symlinks werden aufgelöst. Dateien bleiben nicht mehr im Status „importing" hängen.
+- **Fenster zu klein**: Vergrößert auf 700×850, horizontales Header-Layout, alle Buttons sichtbar.
+- **NSAppleEventsUsageDescription im Info.plist**: macOS zeigt jetzt den Berechtigungsdialog für Automation an.
+- **exiftool deaktiviert**: Verhindert Fehler wenn exiftool nicht installiert ist.
+
+#### Technisch
+- Vollständige Test-Suite mit 215+ Tests
+- PyInstaller-Bundling als native macOS-`.app`
+- SQLite-basierte Persistenz mit WAL-Modus
+- Strukturiertes Logging mit Dateirotation
 
 ## Lizenz
 
