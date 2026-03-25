@@ -221,6 +221,19 @@ class Database:
             stats["total"] += row["count"]
         return stats
 
+    def get_error_files(self, job_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Return files with error status for a given job."""
+        rows = self._connection.execute(
+            """
+            SELECT path, error_message FROM files
+            WHERE job_id = ? AND status = ?
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (job_id, FileStatus.ERROR.value, limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def reset_error_files(self, job_id: str) -> int:
         """Reset all error files to pending status for retry."""
         with self.transaction() as connection:

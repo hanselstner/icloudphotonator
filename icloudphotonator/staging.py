@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import re
 import subprocess
 import tempfile
+import unicodedata
 from pathlib import Path
 from uuid import uuid4
 
@@ -52,7 +53,10 @@ class StagingManager:
             if max_bytes and projected_usage > max_bytes:
                 raise RuntimeError("Staging area is full; increase max_staging_size_gb or clean up staged files.")
 
-            staged_path = self._staging_dir / f"{uuid4().hex}_{file_info.path.name}"
+            # Normalize filename to NFD for macOS filesystem compatibility
+            # (macOS HFS+/APFS uses NFD, but Python strings default to NFC)
+            normalized_name = unicodedata.normalize("NFD", file_info.path.name)
+            staged_path = self._staging_dir / f"{uuid4().hex}_{normalized_name}"
             try:
                 await retry_with_policy(
                     self._file_guard.copy_with_timeout,

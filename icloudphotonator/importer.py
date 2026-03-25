@@ -159,10 +159,19 @@ class PhotoImporter:
             imported_count += int(imported)
             error_count += int(error)
             if error:
+                error_text = row.get("error_message") or ""
+                if not error_text:
+                    # The 'error' column itself may contain descriptive text
+                    # rather than just a boolean flag.
+                    raw_error = str(row.get("error") or "").strip()
+                    if raw_error.lower() not in {"1", "true", "yes", ""}:
+                        error_text = raw_error
+                if not error_text:
+                    error_text = "osxphotos reported an error"
                 errors.append(
                     {
                         "file": row.get("filepath") or row.get("file") or "",
-                        "error": row.get("error_message") or "osxphotos reported an error",
+                        "error": error_text,
                     }
                 )
 

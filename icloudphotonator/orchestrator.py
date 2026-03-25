@@ -4,6 +4,7 @@ import asyncio
 import csv
 import logging
 import threading
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -130,6 +131,16 @@ class ImportOrchestrator:
                         f"{stats.get('skipped', 0)} übersprungen, "
                         f"{stats.get('errors', 0)} Fehler"
                     )
+                    error_files = self.db.get_error_files(job.job_id, limit=21)
+                    if error_files:
+                        self._emit_log(f"⚠️ {stats.get('errors', len(error_files))} Dateien konnten nicht importiert werden:")
+                        for ef in error_files[:20]:
+                            path_name = Path(ef["path"]).name
+                            msg = ef.get("error_message") or "Unbekannter Fehler"
+                            self._emit_log(f"  ❌ {path_name}: {msg}")
+                        if len(error_files) > 20:
+                            remaining = stats.get("errors", len(error_files)) - 20
+                            self._emit_log(f"  ... und {remaining} weitere")
 
             self._sync_job_counts(job)
             self._notify_progress(self.get_job_stats(job.job_id))
@@ -447,7 +458,10 @@ class ImportOrchestrator:
                 continue
 
             staged_row_by_path = {str(file_info.path): row_by_path[str(file_info.path)] for file_info, _ in staged_pairs}
-            staged_lookup = {str(staged_path.resolve()): file_info for file_info, staged_path in staged_pairs}
+            staged_lookup = {
+                unicodedata.normalize("NFD", str(staged_path.resolve())): file_info
+                for file_info, staged_path in staged_pairs
+            }
             staged_paths = [staged_path.resolve() for _, staged_path in staged_pairs]
             for file_info, _ in staged_pairs:
                 self.db.update_file_status(staged_row_by_path[str(file_info.path)]["id"], FileStatus.IMPORTING)
@@ -592,6 +606,8 @@ class ImportOrchestrator:
                     staged_file = str(Path(staged_file).resolve())
                 except OSError:
                     pass
+                # Normalize to NFD for macOS filesystem compatibility
+                staged_file = unicodedata.normalize("NFD", staged_file)
             if not staged_file or staged_file not in staged_lookup:
                 continue
 
@@ -605,8 +621,29 @@ class ImportOrchestrator:
                 staged_lookup[staged_file] = original_info
                 DeduplicationEngine(self.db, job.job_id).mark_as_imported(original_info, report_row.get("uuid") or None)
             elif self._report_bool(report_row.get("error")):
-                matched_error = next((item for item in result.errors if item.get("file") == staged_file), None)
-                message = matched_error.get("error") if matched_error else "osxphotos reported an error"
+                # Try exact match first, then basename match (staging adds UUID prefix)
+                staged_basename = Path(staged_file).name if staged_file else ""
+                matched_error = next(
+                    (item for item in result.errors if item.get("file") == staged_file),
+                    None,
+                )
+                if matched_error is None and staged_basename:
+                    matched_error = next(
+                        (item for item in result.errors if Path(item.get("file") or "").name == staged_basename),
+                        None,
+                    )
+                # Also check the report row itself for error details
+                error_text = report_row.get("error_message") or ""
+                if not error_text and matched_error:
+                    error_text = matched_error.get("error") or ""
+                if not error_text:
+                    # The 'error' column may contain descriptive text
+                    raw_error = str(report_row.get("error") or "").strip()
+                    if raw_error.lower() not in {"1", "true", "yes", ""}:
+                        error_text = raw_error
+                if not error_text:
+                    error_text = "osxphotos reported an error"
+                message = error_text
                 if matched_error:
                     logged_result_errors.add((matched_error.get("file") or "", message or ""))
                 self.db.update_file_status(file_row["id"], FileStatus.ERROR, message)
