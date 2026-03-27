@@ -660,7 +660,7 @@ async def test_import_phase_emits_batch_summary_from_db_statuses(
         return [(file_info, file_info.path) for file_info in unique_files], []
 
     def fake_import_batch(file_paths, **kwargs):
-        return SimpleNamespace(error_count=1, errors=[], success=False)
+        return SimpleNamespace(error_count=1, errors=[], success=False, report_path=tmp_path / "fake-report.csv")
 
     def fake_apply_report(job, staged_row_by_path, staged_lookup, result):
         rows = list(staged_row_by_path.values())

@@ -481,8 +481,38 @@ class ImportOrchestrator:
                 library=self.library,
             )
 
+            # If the batch crashed (no report generated), retry each file individually
+            if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
+                self._emit_log(f"Batch fehlgeschlagen, versuche {len(staged_paths)} Dateien einzeln...")
+                for staged_path in staged_paths:
+                    if self._cancelled:
+                        break
+                    single_result = await asyncio.to_thread(
+                        self.importer.import_batch,
+                        [staged_path],
+                        skip_dups=True,
+                        auto_live=True,
+                        use_exiftool=False,
+                        album=self.album,
+                        report_dir=None,
+                        timeout=120,
+                        library=self.library,
+                    )
+                    # Find the original file info for this staged path
+                    norm_key = unicodedata.normalize("NFD", str(staged_path.resolve()))
+                    original_info = staged_lookup.get(norm_key)
+                    if original_info is None:
+                        continue
+                    single_row_by_path = {str(original_info.path): staged_row_by_path[str(original_info.path)]}
+                    single_lookup = {norm_key: original_info}
+                    self._apply_report(job, single_row_by_path, single_lookup, single_result)
+
             cleanup_paths: list[Path] = []
-            processed_paths = self._apply_report(job, staged_row_by_path, staged_lookup, result)
+            if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
+                # Already handled above via single-file retry
+                processed_paths = {row["path"] for row in row_by_path.values()}
+            else:
+                processed_paths = self._apply_report(job, staged_row_by_path, staged_lookup, result)
 
             fatal_permission_error = self._has_only_fatal_permission_errors(getattr(result, "errors", None))
 
@@ -653,7 +683,24 @@ class ImportOrchestrator:
                 self.db.log_action(job.job_id, file_row["id"], "import_error", message)
             else:
                 # File is in report with imported=0 and error=0 — Photos rejected it
-                reject_msg = f"Photos.app hat die Datei abgelehnt (nicht importiert, kein Fehler gemeldet): {Path(staged_file).name}"
+                original_name = Path(staged_file).name
+                staged_path = Path(staged_file)
+                if staged_path.exists():
+                    size = staged_path.stat().st_size
+                    if size == 0:
+                        reject_msg = f"Datei ist leer (0 bytes): {original_name}"
+                    else:
+                        with open(staged_path, 'rb') as f:
+                            magic = f.read(12)
+                        ext = staged_path.suffix.lower()
+                        if ext in ('.heic', '.heif') and b'ftyp' not in magic:
+                            reject_msg = f"Ungültiges HEIC-Format (magic bytes stimmen nicht): {original_name}"
+                        elif ext in ('.jpg', '.jpeg') and magic[:2] != b'\xff\xd8':
+                            reject_msg = f"Ungültiges JPEG-Format (magic bytes stimmen nicht): {original_name}"
+                        else:
+                            reject_msg = f"Photos.app hat die Datei abgelehnt ({size} bytes, Format scheint OK): {original_name}"
+                else:
+                    reject_msg = f"Staging-Datei nicht mehr vorhanden: {original_name}"
                 self.db.update_file_status(file_row["id"], FileStatus.ERROR, reject_msg)
                 self.db.log_action(job.job_id, file_row["id"], "import_error", reject_msg)
 

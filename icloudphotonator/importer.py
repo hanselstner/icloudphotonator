@@ -66,11 +66,21 @@ class PhotoImporter:
         try:
             self._run_import(file_paths, skip_dups, auto_live, use_exiftool, album, report_path, timeout, library)
         except Exception as exc:
-            error_msg = str(exc).strip()
+            # Walk the full exception chain to capture root causes
+            parts: list[str] = []
+            current: BaseException | None = exc
+            seen: set[int] = set()
+            while current is not None and id(current) not in seen:
+                seen.add(id(current))
+                msg = str(current).strip()
+                if msg:
+                    parts.append(msg)
+                current = getattr(current, '__cause__', None) or getattr(current, '__context__', None)
+            error_msg = " → ".join(parts) if parts else ""
             if not error_msg:
                 error_msg = f"{type(exc).__module__}.{type(exc).__name__}"
-                if "Abort" in type(exc).__name__:
-                    error_msg = "osxphotos aborted — möglicherweise fehlt exiftool (https://exiftool.org/)"
+            if "Abort" in type(exc).__name__ and not parts:
+                error_msg = "osxphotos aborted — möglicherweise fehlt exiftool (https://exiftool.org/)"
             return self._result_from_report(
                 report_path=report_path,
                 fallback_success=False,
@@ -93,6 +103,11 @@ class PhotoImporter:
     ) -> None:
         del timeout  # In-process osxphotos API does not expose timeout control.
         import_cli = self._get_import_cli()
+        self._verbose_log: list[str] = []
+
+        def _verbose_callback(msg: object) -> None:
+            self._verbose_log.append(str(msg))
+
         import_kwargs = dict(
             files_or_dirs=tuple(str(path) for path in file_paths),
             skip_dups=skip_dups,
@@ -100,12 +115,19 @@ class PhotoImporter:
             exiftool=use_exiftool,
             no_progress=True,
             report=str(report_path),
+            verbose=_verbose_callback,
         )
         if album:
             import_kwargs["album"] = (album,)
         if library is not None:
             import_kwargs["library"] = str(library)
-        import_cli(**import_kwargs)
+        try:
+            import_cli(**import_kwargs)
+        except TypeError:
+            # verbose kwarg not supported by this version of osxphotos
+            import_kwargs.pop("verbose", None)
+            self._verbose_log.clear()
+            import_cli(**import_kwargs)
 
     def _get_import_cli(self):
         try:
