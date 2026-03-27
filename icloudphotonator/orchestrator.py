@@ -204,6 +204,9 @@ class ImportOrchestrator:
         if job.state != JobState.VERIFYING:
             self._set_job_state(job, JobState.VERIFYING, "resume_verify", "resume verification")
 
+        self._sync_job_counts(job)
+        self._notify_progress(self.get_job_stats(job.job_id))
+
     def pause(self):
         """Pause the import."""
         self._paused.clear()
@@ -414,6 +417,8 @@ class ImportOrchestrator:
 
     async def _import_phase(self, job: Job, scan_done_event: asyncio.Event | None = None):
         """Run the import loop."""
+        self._sync_job_counts(job)
+        self._notify_progress(self.get_job_stats(job.job_id))
         while not self._cancelled:
             await self._wait_if_paused()
             pending_rows = self.db.get_pending_files(job.job_id, limit=self.throttle.get_batch_size())
