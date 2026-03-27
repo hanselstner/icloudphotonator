@@ -178,6 +178,14 @@ class ImportOrchestrator:
             job.resume()
             self._emit_log("Import wird fortgesetzt.")
 
+        stats = self.db.count_files_by_status(job.job_id)
+        self._emit_log(
+            f"Fortsetzen: {stats.get('pending', 0)} ausstehend, "
+            f"{stats.get('imported', 0)} importiert, "
+            f"{stats.get('error', 0)} Fehler, "
+            f"{stats.get('skipped_duplicate', 0)} übersprungen"
+        )
+
         actual_count = self.db.count_files(job.job_id)
         if actual_count == 0:
             self._set_job_state(job, JobState.SCANNING, "resume_scan", str(source_path))
@@ -406,11 +414,6 @@ class ImportOrchestrator:
 
     async def _import_phase(self, job: Job, scan_done_event: asyncio.Event | None = None):
         """Run the import loop."""
-        reset_count = self.db.reset_error_files(job.job_id)
-        if reset_count > 0:
-            self.db.log_action(job.job_id, None, "retry_errors", f"count={reset_count}")
-            self._emit_log(f"🔄 {reset_count} zuvor fehlgeschlagene Dateien werden erneut versucht.")
-
         while not self._cancelled:
             await self._wait_if_paused()
             pending_rows = self.db.get_pending_files(job.job_id, limit=self.throttle.get_batch_size())
@@ -642,15 +645,17 @@ class ImportOrchestrator:
                     if raw_error.lower() not in {"1", "true", "yes", ""}:
                         error_text = raw_error
                 if not error_text:
-                    error_text = "osxphotos reported an error"
+                    error_text = f"Photos.app Fehler bei {Path(staged_file).name}"
                 message = error_text
                 if matched_error:
                     logged_result_errors.add((matched_error.get("file") or "", message or ""))
                 self.db.update_file_status(file_row["id"], FileStatus.ERROR, message)
                 self.db.log_action(job.job_id, file_row["id"], "import_error", message)
             else:
-                self.db.update_file_status(file_row["id"], FileStatus.SKIPPED_DUPLICATE)
-                self.db.log_action(job.job_id, file_row["id"], "skipped_duplicate", staged_file)
+                # File is in report with imported=0 and error=0 — Photos rejected it
+                reject_msg = f"Photos.app hat die Datei abgelehnt (nicht importiert, kein Fehler gemeldet): {Path(staged_file).name}"
+                self.db.update_file_status(file_row["id"], FileStatus.ERROR, reject_msg)
+                self.db.log_action(job.job_id, file_row["id"], "import_error", reject_msg)
 
         if rows:
             for orig_path, file_row in row_by_path.items():

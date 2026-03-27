@@ -167,7 +167,8 @@ class PhotoImporter:
                     if raw_error.lower() not in {"1", "true", "yes", ""}:
                         error_text = raw_error
                 if not error_text:
-                    error_text = "osxphotos reported an error"
+                    filepath = row.get("filepath") or row.get("file") or ""
+                    error_text = f"Photos.app Fehler bei {Path(filepath).name}" if filepath else "osxphotos reported an error"
                 errors.append(
                     {
                         "file": row.get("filepath") or row.get("file") or "",

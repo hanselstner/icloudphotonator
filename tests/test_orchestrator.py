@@ -500,11 +500,11 @@ async def test_import_phase_passes_library_and_album_to_importer(
 
     await orchestrator._import_phase(job)
 
-    assert captured["file_paths"] == [file_path, retried_file_path]
+    # Error files should NOT be auto-reset; only the pending file is imported
+    assert captured["file_paths"] == [file_path]
     assert captured["album"] == album
     assert captured["library"] == library
     assert captured["use_exiftool"] is False
-    assert any("zuvor fehlgeschlagene Dateien werden erneut versucht" in message for message in emitted_logs)
 
 
 @pytest.mark.asyncio

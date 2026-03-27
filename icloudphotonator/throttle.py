@@ -8,7 +8,7 @@ class ThrottleController:
         self,
         initial_batch_size: int = 5,
         max_batch_size: int = 50,
-        min_batch_size: int = 1,
+        min_batch_size: int = 10,
         cooldown_seconds: float = 30,
         extended_cooldown_seconds: float = 120,
         extended_cooldown_every: int = 100,

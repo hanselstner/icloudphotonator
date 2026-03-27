@@ -221,6 +221,17 @@ class Database:
             stats["total"] += row["count"]
         return stats
 
+    def count_files_by_status(self, job_id: str) -> dict[str, int]:
+        """Return a dict mapping status names to counts for a job."""
+        rows = self._connection.execute(
+            "SELECT status, COUNT(*) AS count FROM files WHERE job_id = ? GROUP BY status",
+            (job_id,),
+        ).fetchall()
+        counts: dict[str, int] = {}
+        for row in rows:
+            counts[row["status"]] = row["count"]
+        return counts
+
     def get_error_files(self, job_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Return files with error status for a given job."""
         rows = self._connection.execute(

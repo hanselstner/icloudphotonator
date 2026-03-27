@@ -1,10 +1,10 @@
 from icloudphotonator.throttle import ThrottleController
 
 
-def test_initial_batch_size_is_five() -> None:
+def test_initial_batch_size_is_ten() -> None:
     throttle = ThrottleController()
 
-    assert throttle.get_batch_size() == 5
+    assert throttle.get_batch_size() == 10
 
 
 def test_batch_size_increases_after_success() -> None:
@@ -16,20 +16,20 @@ def test_batch_size_increases_after_success() -> None:
 
 
 def test_batch_size_halves_after_failure() -> None:
-    throttle = ThrottleController(initial_batch_size=8)
+    throttle = ThrottleController(initial_batch_size=20, min_batch_size=10)
 
-    throttle.report_failure(8)
+    throttle.report_failure(20)
 
-    assert throttle.get_batch_size() == 4
+    assert throttle.get_batch_size() == 10
 
 
 def test_batch_size_does_not_exceed_max() -> None:
-    throttle = ThrottleController(initial_batch_size=5, max_batch_size=6)
+    throttle = ThrottleController(initial_batch_size=10, max_batch_size=12)
 
-    throttle.report_success(5)
-    throttle.report_success(6)
+    throttle.report_success(10)
+    throttle.report_success(12)
 
-    assert throttle.get_batch_size() == 6
+    assert throttle.get_batch_size() == 12
 
 
 def test_batch_size_does_not_go_below_min() -> None:
