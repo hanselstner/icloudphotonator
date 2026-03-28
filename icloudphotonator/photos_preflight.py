@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -74,17 +75,19 @@ class PhotosPreflight:
             logger.warning("Automation-Permission-Check fehlgeschlagen: %s", exc)
             return False
 
-    def check_photos_not_locked(self) -> bool:
-        """Check that Photos is not showing a modal dialog / locked state."""
+    def _check_has_window(self) -> bool:
+        """Check that Photos.app has at least one window (not stuck headless)."""
         try:
             result = self._run_osascript(
-                'tell application "Photos" to get id of every media item whose id is "___nonexistent___"'
+                'tell application "System Events" to tell process "Photos" '
+                'to get count of windows'
             )
-            # If Photos is locked/modal, this will timeout or error differently
-            # A clean "no results" or returncode 0 means Photos is responsive
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            logger.warning("Photos-Lock-Check fehlgeschlagen: %s", exc)
+            if result.returncode != 0:
+                return False
+            count = int(result.stdout.strip())
+            return count >= 1
+        except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+            logger.warning("Photos-Window-Check fehlgeschlagen: %s", exc)
             return False
 
     def check_health_image_import(self) -> bool:
@@ -126,9 +129,9 @@ class PhotosPreflight:
         if not checks["photos_responsive"]:
             errors.append("Photos.app reagiert nicht.")
 
-        checks["photos_not_locked"] = self.check_photos_not_locked()
-        if not checks["photos_not_locked"]:
-            errors.append("Photos.app scheint blockiert zu sein (modaler Dialog?).")
+        checks["has_window"] = self._check_has_window()
+        if not checks["has_window"]:
+            errors.append("Photos.app hat kein Fenster (headless/blockiert?).")
 
         passed = all(checks.values())
         result = PreflightResult(passed=passed, checks=checks, errors=errors)
@@ -140,7 +143,54 @@ class PhotosPreflight:
 
         return result
 
+    # ------------------------------------------------------------------
+    # Auto-recovery helpers
+    # ------------------------------------------------------------------
+
+    def _kill_photos(self) -> None:
+        """Force-kill Photos.app via pkill."""
+        logger.info("Photos wird beendet (pkill)…")
+        subprocess.run(["pkill", "-9", "Photos"], check=False)
+        time.sleep(2)
+
+    def _start_photos(self) -> None:
+        """Launch Photos.app via 'open' and wait for it to appear."""
+        logger.info("Photos wird gestartet…")
+        subprocess.run(["open", "-a", "Photos"], check=False)
+        time.sleep(5)
+
+    def _activate_photos(self) -> None:
+        """Bring Photos to the foreground via AppleScript."""
+        logger.info("Photos wird aktiviert…")
+        try:
+            self._run_osascript('tell application "Photos" to activate')
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            logger.warning("Photos-Activate fehlgeschlagen: %s", exc)
+
     def ensure_photos_responsive(self) -> bool:
-        """Quick check for use before each batch. Fast path — no full preflight."""
-        return self.check_photos_responsive()
+        """Quick responsiveness check with auto-recovery.
+
+        1. Ping Photos — if responsive, return True immediately.
+        2. Otherwise kill → restart → activate → re-check.
+        3. Up to *max_retries* recovery attempts.
+        """
+        max_retries = 2
+        for attempt in range(1 + max_retries):
+            if self.check_photos_responsive() and self._check_has_window():
+                if attempt > 0:
+                    logger.info(
+                        "Photos nach %d Recovery-Versuch(en) wieder bereit.", attempt
+                    )
+                return True
+            if attempt < max_retries:
+                logger.warning(
+                    "Photos reagiert nicht — Recovery-Versuch %d/%d",
+                    attempt + 1,
+                    max_retries,
+                )
+                self._kill_photos()
+                self._start_photos()
+                self._activate_photos()
+        logger.error("Photos nach %d Recovery-Versuchen nicht erreichbar.", max_retries)
+        return False
 
