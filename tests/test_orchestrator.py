@@ -22,6 +22,19 @@ def skip_osxphotos_check(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PhotoImporter, "_verify_osxphotos", lambda self: None)
 
 
+@pytest.fixture(autouse=True)
+def mock_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock all preflight osascript calls so tests never hit real subprocess."""
+    from icloudphotonator.photos_preflight import PhotosPreflight, PreflightResult
+
+    monkeypatch.setattr(
+        PhotosPreflight,
+        "run_preflight",
+        lambda self: PreflightResult(passed=True, checks={"photos_responsive": True}, errors=[]),
+    )
+    monkeypatch.setattr(PhotosPreflight, "ensure_photos_responsive", lambda self: True)
+
+
 def test_orchestrator_initialization(tmp_path: Path) -> None:
     db_path = tmp_path / "jobs.db"
     staging_dir = tmp_path / "staging"

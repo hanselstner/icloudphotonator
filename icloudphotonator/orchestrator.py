@@ -12,6 +12,7 @@ from typing import Callable
 from .db import Database
 from .dedup import DeduplicationEngine
 from .importer import PhotoImporter
+from .photos_preflight import PhotosPreflight
 from .job import Job
 from .persistence import DEFAULT_ACTIVE_JOB_PATH, clear_active_job, save_active_job
 from .resilience import NetworkMonitor
@@ -58,6 +59,7 @@ class ImportOrchestrator:
         self.throttle = ThrottleController()
         self.staging = StagingManager(staging_dir)
         self.importer = PhotoImporter()
+        self.preflight = PhotosPreflight()
         self._paused = asyncio.Event()
         self._paused.set()
         self._paused_thread = threading.Event()
@@ -420,6 +422,15 @@ class ImportOrchestrator:
 
     async def _import_phase(self, job: Job, scan_done_event: asyncio.Event | None = None):
         """Run the import loop."""
+        # Run full preflight before starting import
+        preflight_result = await asyncio.to_thread(self.preflight.run_preflight)
+        if preflight_result.passed:
+            self._emit_log("✅ Preflight bestanden.")
+        else:
+            for error in preflight_result.errors:
+                self._emit_log(f"⚠️ Preflight: {error}")
+            self._emit_log("⚠️ Preflight-Checks nicht bestanden — Import wird trotzdem versucht.")
+
         self._sync_job_counts(job)
         self._notify_progress(self.get_job_stats(job.job_id))
         while not self._cancelled:
@@ -476,6 +487,17 @@ class ImportOrchestrator:
             staged_paths = [staged_path.resolve() for _, staged_path in staged_pairs]
             for file_info, _ in staged_pairs:
                 self.db.update_file_status(staged_row_by_path[str(file_info.path)]["id"], FileStatus.IMPORTING)
+
+            # Quick responsiveness check before each batch
+            if not await asyncio.to_thread(self.preflight.ensure_photos_responsive):
+                self._emit_log("⚠️ Photos.app reagiert nicht — Batch wird als Fehler markiert.")
+                for file_info, _ in staged_pairs:
+                    row = staged_row_by_path[str(file_info.path)]
+                    self.db.update_file_status(row["id"], FileStatus.ERROR, "Photos.app reagiert nicht")
+                    self.db.log_action(job.job_id, row["id"], "import_error", "Photos.app reagiert nicht")
+                self._sync_job_counts(job)
+                self._notify_progress(self.get_job_stats(job.job_id))
+                continue
 
             result = await asyncio.to_thread(
                 self.importer.import_batch,
