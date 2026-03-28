@@ -485,7 +485,7 @@ class ImportOrchestrator:
                 use_exiftool=False,
                 album=self.album,
                 report_dir=None,
-                timeout=600,
+                timeout=120,
                 library=self.library,
             )
 
@@ -503,7 +503,7 @@ class ImportOrchestrator:
                         use_exiftool=False,
                         album=self.album,
                         report_dir=None,
-                        timeout=120,
+                        timeout=30,
                         library=self.library,
                     )
                     # Find the original file info for this staged path
@@ -514,6 +514,28 @@ class ImportOrchestrator:
                     single_row_by_path = {str(original_info.path): staged_row_by_path[str(original_info.path)]}
                     single_lookup = {norm_key: original_info}
                     self._apply_report(job, single_row_by_path, single_lookup, single_result)
+                    # If single file also crashed and _apply_report didn't already mark it, set error
+                    if not getattr(single_result, 'success', True) and getattr(single_result, 'report_path', None) is None:
+                        file_row = staged_row_by_path.get(str(original_info.path))
+                        if file_row:
+                            current = self.db._connection.execute(
+                                'SELECT status FROM files WHERE id = ?', (file_row['id'],)
+                            ).fetchone()
+                            if current and current[0] == FileStatus.IMPORTING.value:
+                                self.db.update_file_status(file_row['id'], FileStatus.ERROR, error_message=f'Import gescheitert: {original_info.path.name}')
+
+                # Safety net: mark any files still in importing as error
+                for file_info, _ in staged_pairs:
+                    row = staged_row_by_path.get(str(file_info.path))
+                    if row:
+                        current_status = self.db._connection.execute(
+                            'SELECT status FROM files WHERE id = ?', (row['id'],)
+                        ).fetchone()
+                        if current_status and current_status[0] == FileStatus.IMPORTING.value:
+                            self.db.update_file_status(row['id'], FileStatus.ERROR, error_message=f'Import gescheitert: {file_info.path.name}')
+
+                self._sync_job_counts(job)
+                self._notify_progress(self.get_job_stats(job.job_id))
 
             cleanup_paths: list[Path] = []
             if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
