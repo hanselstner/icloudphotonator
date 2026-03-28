@@ -32,9 +32,7 @@ REMAINING_FILE_STATUSES = {
 RECOVERABLE_FILE_STATUSES = {
     FileStatus.SCANNING.value,
     FileStatus.STAGED.value,
-    FileStatus.IMPORTING.value,
     FileStatus.RETRYING.value,
-    FileStatus.ERROR.value,
 }
 
 
@@ -192,6 +190,11 @@ class ImportOrchestrator:
             self._emit_log(f"Scanne Quelle: {source_path}")
             await self._scan_phase(job, source_path)
             return
+
+        # Mark files stuck in IMPORTING as error (they caused a hang last time)
+        stuck_importing = self._mark_stuck_importing(job.job_id)
+        if stuck_importing:
+            self._emit_log(f"{stuck_importing} Dateien waren beim letzten Import hängengeblieben und werden als Fehler markiert.")
 
         recovered_files = self._recover_file_statuses(job.job_id)
         if recovered_files:
@@ -797,6 +800,18 @@ class ImportOrchestrator:
             elif status == FileStatus.ERROR.value:
                 batch_stats["errors"] += count
         return batch_stats
+
+    def _mark_stuck_importing(self, job_id: str) -> int:
+        with self.db.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE files
+                SET status = ?, error_message = ?
+                WHERE job_id = ? AND status = ?
+                """,
+                (FileStatus.ERROR.value, "Import wurde durch App-Neustart unterbrochen", job_id, FileStatus.IMPORTING.value),
+            )
+        return int(cursor.rowcount or 0)
 
     def _recover_file_statuses(self, job_id: str) -> int:
         placeholders = ", ".join("?" for _ in RECOVERABLE_FILE_STATUSES)

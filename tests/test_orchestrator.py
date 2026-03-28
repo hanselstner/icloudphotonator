@@ -242,11 +242,11 @@ async def test_resume_existing_job_requeues_files_skips_scan_and_clears_active_j
     db = Database(tmp_path / "jobs.db")
     job_id = db.create_job(source_path, {})
     db.update_job_state(job_id, JobState.ERROR)
-    error_id = db.add_file(job_id, source_path / "a.jpg", 1, "hash-a", "image")
-    importing_id = db.add_file(job_id, source_path / "b.jpg", 1, "hash-b", "image")
+    scanning_id = db.add_file(job_id, source_path / "a.jpg", 1, "hash-a", "image")
+    staged_id = db.add_file(job_id, source_path / "b.jpg", 1, "hash-b", "image")
     pending_id = db.add_file(job_id, source_path / "c.jpg", 1, "hash-c", "image")
-    db.update_file_status(error_id, FileStatus.ERROR, error_message="failed")
-    db.update_file_status(importing_id, FileStatus.IMPORTING)
+    db.update_file_status(scanning_id, FileStatus.SCANNING)
+    db.update_file_status(staged_id, FileStatus.STAGED)
     db.update_file_status(pending_id, FileStatus.PENDING)
 
     active_job_path = tmp_path / "active_job.json"

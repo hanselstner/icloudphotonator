@@ -101,7 +101,8 @@ class PhotoImporter:
         timeout: int,
         library: Path | None = None,
     ) -> None:
-        del timeout  # In-process osxphotos API does not expose timeout control.
+        import concurrent.futures
+
         import_cli = self._get_import_cli()
         self._verbose_log: list[str] = []
 
@@ -121,13 +122,22 @@ class PhotoImporter:
             import_kwargs["album"] = (album,)
         if library is not None:
             import_kwargs["library"] = str(library)
-        try:
-            import_cli(**import_kwargs)
-        except TypeError:
-            # verbose kwarg not supported by this version of osxphotos
-            import_kwargs.pop("verbose", None)
-            self._verbose_log.clear()
-            import_cli(**import_kwargs)
+
+        def _do_import() -> None:
+            try:
+                import_cli(**import_kwargs)
+            except TypeError:
+                # verbose kwarg not supported by this version of osxphotos
+                import_kwargs.pop("verbose", None)
+                self._verbose_log.clear()
+                import_cli(**import_kwargs)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_do_import)
+            try:
+                future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                raise TimeoutError(f"osxphotos Import-Timeout nach {timeout}s")
 
     def _get_import_cli(self):
         try:
