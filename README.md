@@ -35,6 +35,7 @@ iCloudPhotonator importiert große Foto- und Videoarchive von NAS-Systemen, exte
 - 🔐 **Berechtigungs-Onboarding**: Beim ersten Start führt die App durch die nötigen macOS-Berechtigungen (Automation, Fotomediathek).
 - ⚠️ **Intelligente Fehlererkennung**: Fatale Fehler wie fehlende Automation-Berechtigung werden sofort erkannt und der Import sauber gestoppt.
 - 💾 **Datensicherheit**: WAL-Checkpoints alle 500 Dateien und beim Beenden — kein Datenverlust bei App-Abbruch.
+- 🔍 **Photos Preflight**: Automatische Vorab-Prüfung der Apple-Fotos-Umgebung vor dem Import — erkennt fehlende Berechtigungen, gesperrte Mediatheken und iCloud-Probleme frühzeitig.
 
 ## ⚡ Intelligentes Datenmanagement
 
@@ -65,7 +66,7 @@ Die App importiert nicht statisch, sondern passt die Last dynamisch an das Verha
 
 - Start mit **5 Dateien pro Batch**
 - wächst bei Erfolg schrittweise bis maximal **50 Dateien pro Batch**
-- halbiert sich bei Fehlern bis minimal **1 Datei pro Batch**
+- halbiert sich bei Fehlern bis minimal **10 Dateien pro Batch**
 - wartet standardmäßig **30 Sekunden** zwischen zwei Batches
 - führt nach jeweils **100 verarbeiteten Dateien** einen erweiterten Cooldown von **2 Minuten** aus
 
@@ -186,6 +187,7 @@ Wichtige Implementierungsbausteine:
 - `throttle.py` — adaptives Batch- und Cooldown-Management
 - `dedup.py` — hash-basierte Duplikat-Erkennung
 - `resilience.py` — Retry-Logik und Netzwerküberwachung
+- `photos_preflight.py` — Vorab-Prüfung der Apple-Fotos-Umgebung (Berechtigungen, Mediathek, iCloud)
 - `orchestrator.py` — durchgehender Workflow von Scan bis Abschluss
 
 ## Open-Source-Abhängigkeiten
@@ -211,6 +213,14 @@ uv run python -m pytest tests/ -q --tb=short
 ```
 
 ## Changelog
+
+### v0.2.0-beta — März 2026
+
+#### Neue Funktionen
+- **Photos Preflight System**: Automatische Vorab-Prüfung der Apple-Fotos-Umgebung vor dem Import. Erkennt fehlende Berechtigungen, gesperrte Mediatheken und iCloud-Synchronisierungsprobleme — bevor der erste Batch gestartet wird.
+
+#### Verbesserungen
+- **Batch-Minimum auf 10 angehoben**: Das adaptive Batching reduziert die Batch-Größe bei Fehlern jetzt bis minimal 10 Dateien (vorher 1), um die Performance bei vorübergehenden Problemen zu verbessern.
 
 ### v0.1.0-beta — März 2026
 
