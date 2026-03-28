@@ -17,7 +17,7 @@ from .job import Job
 from .persistence import DEFAULT_ACTIVE_JOB_PATH, clear_active_job, save_active_job
 from .resilience import NetworkMonitor
 from .scanner import FileInfo, MediaType, ScanCancelledError, Scanner
-from .staging import StagingManager
+from .staging import StagingManager, validate_media_file
 from .state import FileStatus, JobState, transition
 from .throttle import ThrottleController
 
@@ -478,6 +478,26 @@ class ImportOrchestrator:
                 ):
                     await asyncio.sleep(self.throttle.get_cooldown())
                 continue
+
+            # Validate media files before import
+            valid_staged_pairs = []
+            for file_info, staged_path in staged_pairs:
+                is_valid, error_msg = validate_media_file(staged_path.resolve())
+                if not is_valid:
+                    row = row_by_path.get(str(file_info.path))
+                    if row:
+                        self.db.update_file_status(row["id"], FileStatus.ERROR, f"Korrupte Datei: {error_msg}")
+                        self.db.log_action(job.job_id, row["id"], "validation_error", error_msg)
+                        self._emit_log(f"⚠️ {file_info.path.name}: {error_msg}")
+                else:
+                    valid_staged_pairs.append((file_info, staged_path))
+
+            if not valid_staged_pairs:
+                self._sync_job_counts(job)
+                self._notify_progress(self.get_job_stats(job.job_id))
+                continue
+
+            staged_pairs = valid_staged_pairs
 
             staged_row_by_path = {str(file_info.path): row_by_path[str(file_info.path)] for file_info, _ in staged_pairs}
             staged_lookup = {

@@ -19,6 +19,41 @@ class StagingFailure:
     error: str
 
 
+def validate_media_file(path: Path) -> tuple[bool, str]:
+    """Check if file has valid media magic bytes."""
+    try:
+        with open(path, 'rb') as f:
+            header = f.read(16)
+    except OSError as e:
+        return False, f"Datei nicht lesbar: {e}"
+
+    if len(header) < 4:
+        return False, "Datei zu klein"
+
+    # Null-byte check: if first 16 bytes are all zeros, file is corrupt
+    if all(b == 0 for b in header):
+        return False, "Korrupte Datei: nur Nullbytes"
+
+    # Check known magic bytes
+    if header[:3] == b'\xff\xd8\xff':  # JPEG
+        return True, ""
+    if header[:4] == b'\x89PNG':  # PNG
+        return True, ""
+    if header[:4] == b'GIF8':  # GIF
+        return True, ""
+    if header[4:8] == b'ftyp':  # HEIC, MP4, MOV
+        return True, ""
+    if header[:4] in (b'II*\x00', b'MM\x00*'):  # TIFF
+        return True, ""
+    if header[:2] == b'BM':  # BMP
+        return True, ""
+    if header[:4] == b'RIFF' and len(header) >= 12 and header[8:12] == b'WEBP':  # WEBP
+        return True, ""
+
+    # Unknown format — let Photos try it (don't block, just warn)
+    return True, ""
+
+
 class StagingManager:
     """Stages files from network sources to local temp directory."""
 
