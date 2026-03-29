@@ -434,6 +434,7 @@ class ImportOrchestrator:
 
         self._sync_job_counts(job)
         self._notify_progress(self.get_job_stats(job.job_id))
+        consecutive_failed_batches = 0
         while not self._cancelled:
             await self._wait_if_paused()
             pending_rows = self.db.get_pending_files(job.job_id, limit=self.throttle.get_batch_size())
@@ -630,6 +631,22 @@ class ImportOrchestrator:
                 f"❌ {batch_stats['errors']} Fehler"
             )
             self._notify_progress(self.get_job_stats(job.job_id))
+
+            # Consecutive failure detection: pause after 3 batches with zero imports
+            if batch_stats["imported"] == 0:
+                consecutive_failed_batches += 1
+                if consecutive_failed_batches >= 3:
+                    self._emit_log(
+                        "⚠️ Photos.app akzeptiert keine Imports mehr "
+                        "(3 Batches ohne Erfolg). Bitte Photos.app beenden "
+                        "und neu starten, dann Import fortsetzen."
+                    )
+                    self.db.log_action(job.job_id, None, "auto_pause", "3 consecutive batches without success")
+                    self.pause()
+                    consecutive_failed_batches = 0
+            else:
+                consecutive_failed_batches = 0
+
             if fatal_permission_error:
                 self._emit_log("❌ Die Automation-Berechtigung für Fotos fehlt. Import wird gestoppt.")
                 self.cancel()
@@ -772,6 +789,14 @@ class ImportOrchestrator:
                         error_text = raw_error
                 if not error_text:
                     error_text = f"Photos.app Fehler bei {Path(staged_file).name}"
+                    # Silent failure — retry instead of permanent error
+                    retry_count = self._count_retries(job.job_id, file_row["id"])
+                    if retry_count < 3:
+                        self.db.update_file_status(file_row["id"], FileStatus.PENDING)
+                        self.db.log_action(job.job_id, file_row["id"], "retry_queued", error_text)
+                        if matched_error:
+                            logged_result_errors.add((matched_error.get("file") or "", error_text or ""))
+                        continue
                 message = error_text
                 if matched_error:
                     logged_result_errors.add((matched_error.get("file") or "", message or ""))
@@ -953,3 +978,11 @@ class ImportOrchestrator:
     @staticmethod
     def _report_bool(value: object) -> bool:
         return str(value).strip().lower() in {"1", "true", "yes"}
+
+    def _count_retries(self, job_id: str, file_id: int) -> int:
+        """Count how many times a file has been queued for retry via import_log."""
+        row = self.db._connection.execute(
+            "SELECT COUNT(*) AS cnt FROM import_log WHERE job_id = ? AND file_id = ? AND action = 'retry_queued'",
+            (job_id, file_id),
+        ).fetchone()
+        return int(row["cnt"]) if row else 0
