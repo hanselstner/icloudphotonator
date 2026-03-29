@@ -794,9 +794,15 @@ class ImportOrchestrator:
                         elif ext in ('.jpg', '.jpeg') and magic[:2] != b'\xff\xd8':
                             reject_msg = f"Ungültiges JPEG-Format (magic bytes stimmen nicht): {original_name}"
                         else:
-                            reject_msg = f"Photos.app hat die Datei abgelehnt ({size} bytes, Format scheint OK): {original_name}"
+                            reject_msg = f"Duplikat-Skip ({size} bytes, Format scheint OK): {original_name}"
+                            self.db.update_file_status(file_row["id"], FileStatus.SKIPPED_DUPLICATE, reject_msg)
+                            self.db.log_action(job.job_id, file_row["id"], "skipped_duplicate", reject_msg)
+                            continue
                 else:
-                    reject_msg = f"Staging-Datei nicht mehr vorhanden: {original_name}"
+                    reject_msg = f"Staging-Datei nicht mehr vorhanden (kein Fehler gemeldet): {original_name}"
+                    self.db.update_file_status(file_row["id"], FileStatus.SKIPPED_DUPLICATE, reject_msg)
+                    self.db.log_action(job.job_id, file_row["id"], "skipped_duplicate", reject_msg)
+                    continue
                 self.db.update_file_status(file_row["id"], FileStatus.ERROR, reject_msg)
                 self.db.log_action(job.job_id, file_row["id"], "import_error", reject_msg)
 
