@@ -510,6 +510,9 @@ class ImportOrchestrator:
 
             # Quick responsiveness check before each batch
             if not await asyncio.to_thread(self.preflight.ensure_photos_responsive):
+                if not await asyncio.to_thread(self.preflight.check_automation_permission):
+                    self._emit_log("❌ Automation-Berechtigung fehlt!")
+                    break
                 self._emit_log("⚠️ Photos.app reagiert nicht — Batch wird als Fehler markiert.")
                 for file_info, _ in staged_pairs:
                     row = staged_row_by_path[str(file_info.path)]

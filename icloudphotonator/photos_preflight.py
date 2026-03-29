@@ -171,8 +171,9 @@ class PhotosPreflight:
         """Quick responsiveness check with auto-recovery.
 
         1. Ping Photos — if responsive, return True immediately.
-        2. Otherwise kill → restart → activate → re-check.
-        3. Up to *max_retries* recovery attempts.
+        2. Check automation permission — if missing, skip kill/restart (won't help).
+        3. Otherwise kill → restart → activate → re-check.
+        4. Up to *max_retries* recovery attempts.
         """
         max_retries = 2
         for attempt in range(1 + max_retries):
@@ -183,6 +184,9 @@ class PhotosPreflight:
                     )
                 return True
             if attempt < max_retries:
+                if not self.check_automation_permission():
+                    logger.error("Automation-Berechtigung fehlt — Kill/Restart hilft nicht.")
+                    return False
                 logger.warning(
                     "Photos reagiert nicht — Recovery-Versuch %d/%d",
                     attempt + 1,

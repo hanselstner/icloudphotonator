@@ -146,10 +146,12 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
                 messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
                 _mark_onboarding_done()
 
-            self.add_log("Prüfe Automation-Berechtigung...")
-            if _check_automation_permission():
-                self.add_log("✅ Automation-Berechtigung erteilt.")
-            else:
+            while True:
+                self.add_log("Prüfe Automation-Berechtigung...")
+                if _check_automation_permission():
+                    self.add_log("✅ Automation-Berechtigung erteilt.")
+                    break
+
                 self.add_log("⚠️ Automation-Berechtigung nicht erteilt.")
                 open_prefs = messagebox.askyesno(
                     "Berechtigung fehlt",
@@ -157,10 +159,18 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
                     "Möchten Sie die Systemeinstellungen öffnen, um die Berechtigung zu erteilen?",
                     icon="warning",
                 )
-                if open_prefs:
-                    subprocess.Popen(
-                        ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
-                    )
+                if not open_prefs:
+                    self.add_log("⚠️ Automation-Berechtigung abgelehnt — Funktionen eingeschränkt.")
+                    break
+
+                subprocess.Popen(
+                    ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
+                )
+                messagebox.showinfo(
+                    "Berechtigung erteilen",
+                    "Bitte erteilen Sie die Berechtigung in den Systemeinstellungen.\n\n"
+                    "Klicken Sie OK, wenn Sie fertig sind.",
+                )
 
         def _run_startup_sequence(self) -> None:
             self._show_onboarding()
@@ -256,10 +266,12 @@ else:
                 messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
                 _mark_onboarding_done()
 
-            self.add_log("Prüfe Automation-Berechtigung...")
-            if _check_automation_permission():
-                self.add_log("✅ Automation-Berechtigung erteilt.")
-            else:
+            while True:
+                self.add_log("Prüfe Automation-Berechtigung...")
+                if _check_automation_permission():
+                    self.add_log("✅ Automation-Berechtigung erteilt.")
+                    break
+
                 self.add_log("⚠️ Automation-Berechtigung nicht erteilt.")
                 open_prefs = messagebox.askyesno(
                     "Berechtigung fehlt",
@@ -267,10 +279,18 @@ else:
                     "Möchten Sie die Systemeinstellungen öffnen, um die Berechtigung zu erteilen?",
                     icon="warning",
                 )
-                if open_prefs:
-                    subprocess.Popen(
-                        ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
-                    )
+                if not open_prefs:
+                    self.add_log("⚠️ Automation-Berechtigung abgelehnt — Funktionen eingeschränkt.")
+                    break
+
+                subprocess.Popen(
+                    ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
+                )
+                messagebox.showinfo(
+                    "Berechtigung erteilen",
+                    "Bitte erteilen Sie die Berechtigung in den Systemeinstellungen.\n\n"
+                    "Klicken Sie OK, wenn Sie fertig sind.",
+                )
 
         def _build_ui(self) -> None:
             self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
