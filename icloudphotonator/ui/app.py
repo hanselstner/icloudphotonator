@@ -214,6 +214,8 @@ else:
             self._is_running = False
             self._is_paused = False
             self._last_stats: dict[str, int] = {}
+            self._last_error_count: int = 0
+            self._last_job_id: str | None = None
             self.path_var = tk.StringVar(value="Noch kein Ordner ausgewählt")
             self.album_var = tk.StringVar(value="")
             self.library_var = tk.StringVar(value=DEFAULT_LIBRARY_OPTION)
@@ -367,7 +369,9 @@ else:
             self.pause_btn = ctk.CTkButton(frame, text="⏸ Pause", fg_color="#ffc107", hover_color="#e0a800", text_color="black", command=self._on_pause, state="disabled")
             self.pause_btn.pack(side="left", padx=6, expand=True, fill="x")
             self.stop_btn = ctk.CTkButton(frame, text="⏹ Stop", fg_color="#dc3545", hover_color="#c82333", command=self._on_stop, state="disabled")
-            self.stop_btn.pack(side="left", padx=(6, 0), expand=True, fill="x")
+            self.stop_btn.pack(side="left", padx=6, expand=True, fill="x")
+            self.retry_btn = ctk.CTkButton(frame, text="🔄 Retry Fehler", fg_color="#6f42c1", hover_color="#5a32a3", command=self._on_retry_errors, state="disabled")
+            self.retry_btn.pack(side="left", padx=(6, 0), expand=True, fill="x")
 
         def _build_log_area(self) -> None:
             ctk.CTkLabel(self.main_frame, text="Log", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(0, 6))
@@ -421,6 +425,13 @@ else:
                 icon="question",
             )
             if not should_resume:
+                error_count = stats.get("error", 0)
+                if error_count > 0:
+                    self._last_job_id = job["id"]
+                    self._last_error_count = error_count
+                    self._source_path = Path(source_path)
+                    self._set_path_display(source_path)
+                    self.retry_btn.configure(state="normal")
                 return
 
             self._source_path = Path(source_path)
@@ -434,15 +445,18 @@ else:
                 return
             self._is_running = True
             self._is_paused = False
+            self._last_error_count = 0
             self.start_btn.configure(state="disabled")
             self.pause_btn.configure(state="normal", text="⏸ Pause")
             self.stop_btn.configure(state="normal")
+            self.retry_btn.configure(state="disabled")
             self.browse_btn.configure(state="disabled")
             self.album_entry.configure(state="disabled")
             self.album_auto_btn.configure(state="disabled")
             self.library_combo.configure(state="disabled")
             self._set_status("🔄 Scanne...", indeterminate=True)
             if job_id:
+                self._last_job_id = job_id
                 self.add_log("Import wird fortgesetzt...")
                 self._bridge.resume_import(job_id)
                 return
@@ -477,8 +491,40 @@ else:
             self._bridge.stop()
             self._finish_run("⏹ Gestoppt", "Import gestoppt.")
 
+        def _on_retry_errors(self) -> None:
+            if self._is_running or not self._last_job_id:
+                return
+            error_count = self._last_error_count
+            should_retry = messagebox.askyesno(
+                APP_TITLE,
+                (
+                    f"{error_count} Dateien mit Fehlern gefunden.\n\n"
+                    "Möchtest du diese Dateien erneut importieren?"
+                ),
+                icon="question",
+            )
+            if not should_retry:
+                return
+            self.add_log(f"Retry: {error_count} fehlerhafte Dateien werden erneut importiert...")
+            self._is_running = True
+            self._is_paused = False
+            self._last_error_count = 0
+            self.start_btn.configure(state="disabled")
+            self.pause_btn.configure(state="normal", text="⏸ Pause")
+            self.stop_btn.configure(state="normal")
+            self.retry_btn.configure(state="disabled")
+            self.browse_btn.configure(state="disabled")
+            self.album_entry.configure(state="disabled")
+            self.album_auto_btn.configure(state="disabled")
+            self.library_combo.configure(state="disabled")
+            self._set_status("🔄 Importiere...", indeterminate=True)
+            self._bridge.retry_errors(self._last_job_id)
+
         def _handle_progress(self, payload: dict) -> None:
             if isinstance(payload, dict):
+                self._last_error_count = payload.get("errors", self._last_error_count)
+                if "job_id" in payload:
+                    self._last_job_id = payload["job_id"]
                 self.update_stats(payload)
 
         def _handle_complete(self) -> None:
@@ -506,6 +552,7 @@ else:
             self.start_btn.configure(state="normal" if self._source_path else "disabled")
             self.pause_btn.configure(state="disabled", text="⏸ Pause")
             self.stop_btn.configure(state="disabled")
+            self.retry_btn.configure(state="normal" if self._last_error_count > 0 else "disabled")
             self.browse_btn.configure(state="normal")
             self.album_entry.configure(state="normal")
             self.album_auto_btn.configure(state="normal")

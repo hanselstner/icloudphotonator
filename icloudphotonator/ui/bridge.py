@@ -96,6 +96,29 @@ class BackendBridge:
 
         return sorted(jobs, key=lambda job: job["id"] != active_job_id)
 
+    def retry_errors(self, job_id: str) -> None:
+        """Reset error files to pending and restart the import."""
+        if self._thread and self._thread.is_alive():
+            self._emit_log("Ein Import läuft bereits.")
+            return
+
+        db = Database(self._db_path)
+        job = db.get_job(job_id)
+        if not job or not job.get("source_path"):
+            self._emit_error("Der gespeicherte Import konnte nicht gefunden werden.")
+            return
+
+        error_count = db.get_job_stats(job_id).get("error", 0)
+        self._emit_log(f"Setze {error_count} fehlerhafte Dateien zurück...")
+        db.reset_error_files(job_id)
+
+        self._thread = threading.Thread(
+            target=self._run_import,
+            args=(Path(job["source_path"]), job_id),
+            daemon=True,
+        )
+        self._thread.start()
+
     def pause(self) -> None:
         self._dispatch_to_orchestrator("pause")
 
