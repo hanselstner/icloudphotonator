@@ -61,10 +61,12 @@ class PhotosPreflight:
     def check_photos_running(self) -> bool:
         """Check if Photos.app is running."""
         try:
-            success, output = self._run_applescript(
-                'tell application "System Events" to (name of processes) contains "Photos"'
+            result = subprocess.run(
+                ["pgrep", "-x", "Photos"],
+                capture_output=True,
+                check=False,
             )
-            return success and "true" in output.lower()
+            return result.returncode == 0
         except Exception as exc:
             logger.warning("Photos-Running-Check fehlgeschlagen: %s", exc)
             return False
@@ -88,17 +90,13 @@ class PhotosPreflight:
             return False
 
     def _check_has_window(self) -> bool:
-        """Check that Photos.app has at least one window (not stuck headless)."""
+        """Check that Photos.app is responsive (not stuck headless)."""
         try:
-            success, output = self._run_applescript(
-                'tell application "System Events" to tell process "Photos" '
-                'to get count of windows'
+            success, _output = self._run_applescript(
+                'tell application "Photos" to get name'
             )
-            if not success:
-                return False
-            count = int(output.strip())
-            return count >= 1
-        except (ValueError, Exception) as exc:
+            return success
+        except Exception as exc:
             logger.warning("Photos-Window-Check fehlgeschlagen: %s", exc)
             return False
 
