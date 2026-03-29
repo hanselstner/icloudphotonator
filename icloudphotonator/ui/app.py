@@ -665,18 +665,20 @@ else:
             def _update() -> None:
                 self._last_stats.update(stats)
                 state = self._last_stats.get("state")
+                staged_current = self._last_stats.get("staged", 0)
+                staged_total = self._last_stats.get("staged_total", 0)
                 values = {
                     "entdeckt": self._last_stats.get("discovered", self._last_stats.get("total", 0)),
                     "importiert": self._last_stats.get("imported", 0),
-                    "gestaged": self._last_stats.get("staged", 0),
+                    "gestaged": f"{staged_current} (∑ {staged_total:,})".replace(",", ".") if staged_total > 0 else str(staged_current),
                     "duplikate": self._last_stats.get("duplicates", 0),
                     "fehler": self._last_stats.get("errors", 0),
                 }
                 values["verbleibend"] = self._last_stats.get(
                     "remaining",
-                    max(values["entdeckt"] - (values["importiert"] + values["duplikate"] + values["fehler"]), 0),
+                    max(int(values["entdeckt"]) - (int(values["importiert"]) + int(values["duplikate"]) + int(values["fehler"])), 0),
                 )
-                done = max(values["entdeckt"] - values["verbleibend"], 0)
+                done = max(int(values["entdeckt"]) - int(values["verbleibend"]), 0)
                 for key, value in values.items():
                     self.stat_cards[key].set_value(value)
                 total = values["entdeckt"]

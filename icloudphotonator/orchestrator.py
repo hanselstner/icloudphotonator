@@ -83,6 +83,7 @@ class ImportOrchestrator:
         self._paused.set()
         self._paused_thread.set()
         self._cancel_thread.clear()
+        self.staging.reset_cumulative_staged_count()
         job = Job(self.db, job_id) if job_id else Job(self.db)
         self._active_job = job
         self._stop_network_monitor()
@@ -664,6 +665,7 @@ class ImportOrchestrator:
             "duplicates": duplicate_count,
             "skipped": skipped_total,
             "staged": self.staging.get_staged_count(),
+            "staged_total": self.staging.cumulative_staged_count,
             "errors": file_stats[FileStatus.ERROR.value],
             "remaining": remaining,
             "current_batch_size": self.throttle.current_batch_size,

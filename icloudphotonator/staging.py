@@ -67,6 +67,7 @@ class StagingManager:
         self._max_staging_size_bytes = int(max(0.0, max_staging_size_gb) * 1024**3)
         self._file_guard = FileOperationGuard(timeout=120.0)
         self._retry_policy = RetryPolicy(max_retries=3, base_delay=1.0, max_delay=8.0, backoff_factor=2.0)
+        self._cumulative_staged_count: int = 0
 
     async def stage_files(
         self, files: list[FileInfo], progress_callback=None
@@ -108,6 +109,7 @@ class StagingManager:
                 continue
 
             logger.debug("Datei gestaged: %s → %s", file_info.path, staged_path)
+            self._cumulative_staged_count += 1
             staged_files.append((file_info, staged_path))
             if progress_callback is not None:
                 progress_callback(file_info, staged_path)
@@ -136,6 +138,15 @@ class StagingManager:
         """Returns (used_bytes, max_bytes)."""
         used_bytes = sum(path.stat().st_size for path in self._staging_dir.rglob("*") if path.is_file())
         return used_bytes, self._max_staging_size_bytes
+
+    @property
+    def cumulative_staged_count(self) -> int:
+        """Return the total number of files staged across all batches."""
+        return self._cumulative_staged_count
+
+    def reset_cumulative_staged_count(self) -> None:
+        """Reset the cumulative staged counter (e.g. at import start)."""
+        self._cumulative_staged_count = 0
 
     @property
     def staging_dir(self) -> Path:
