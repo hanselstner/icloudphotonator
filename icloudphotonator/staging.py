@@ -8,8 +8,12 @@ import unicodedata
 from pathlib import Path
 from uuid import uuid4
 
+import logging
+
 from .resilience import FileOperationGuard, RetryPolicy, retry_with_policy
 from .scanner import FileInfo
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,7 @@ class StagingManager:
                 failures.append(StagingFailure(file_info=file_info, staged_path=staged_path, error=str(exc)))
                 continue
 
+            logger.debug("Datei gestaged: %s → %s", file_info.path, staged_path)
             staged_files.append((file_info, staged_path))
             if progress_callback is not None:
                 progress_callback(file_info, staged_path)

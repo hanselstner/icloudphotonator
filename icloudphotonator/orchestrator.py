@@ -499,6 +499,24 @@ class ImportOrchestrator:
 
             staged_pairs = valid_staged_pairs
 
+            # Safety check: reject network files that weren't actually staged
+            safe_staged_pairs = []
+            for file_info, staged_path in staged_pairs:
+                if self.staging._requires_staging(file_info.path) and staged_path == file_info.path:
+                    row = row_by_path.get(str(file_info.path))
+                    if row:
+                        self.db.update_file_status(row["id"], FileStatus.ERROR, "Staging fehlgeschlagen: Netzwerkdatei wurde nicht lokal kopiert")
+                        self.db.log_action(job.job_id, row["id"], "staging_error", "Netzwerkdatei nicht gestaged")
+                        self._emit_log(f"⚠️ {file_info.path.name}: Netzwerkdatei nicht gestaged — übersprungen")
+                else:
+                    safe_staged_pairs.append((file_info, staged_path))
+            staged_pairs = safe_staged_pairs
+
+            if not staged_pairs:
+                self._sync_job_counts(job)
+                self._notify_progress(self.get_job_stats(job.job_id))
+                continue
+
             staged_row_by_path = {str(file_info.path): row_by_path[str(file_info.path)] for file_info, _ in staged_pairs}
             staged_lookup = {
                 unicodedata.normalize("NFD", str(staged_path.resolve())): file_info
@@ -816,7 +834,7 @@ class ImportOrchestrator:
         return processed_paths
 
     def _row_to_file_info(self, row: dict) -> FileInfo:
-        path = Path(row["path"])
+        path = Path(unicodedata.normalize("NFD", row["path"]))
         try:
             stat_result = path.stat()
             created = datetime.fromtimestamp(stat_result.st_ctime)
