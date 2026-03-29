@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import webbrowser
 from pathlib import Path
@@ -87,6 +88,12 @@ def _check_automation_permission() -> bool:
         return False
 
 
+def _check_source_access(path: Path | str) -> bool:
+    """Return True if *path* exists and is readable (os.access check)."""
+    p = Path(path)
+    return p.exists() and os.access(p, os.R_OK)
+
+
 def _check_onboarding_done() -> bool:
     """Check whether the first-launch permission onboarding is already complete."""
     if not ONBOARDING_CONFIG_PATH.exists():
@@ -169,8 +176,29 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
                     "Klicken Sie OK, wenn Sie fertig sind.",
                 )
 
+        def _ensure_source_access_if_needed(self) -> None:
+            """If the last incomplete job's source folder is inaccessible, prompt the user."""
+            incomplete_jobs = [job for job in self._bridge.get_incomplete_jobs() if job.get("source_path")]
+            if not incomplete_jobs:
+                return
+            source_path = incomplete_jobs[0].get("source_path", "")
+            if not source_path or _check_source_access(source_path):
+                return
+            self.add_log(f"⚠️ Quellordner nicht erreichbar: {source_path}")
+            messagebox.showwarning(
+                "Quellordner nicht erreichbar",
+                (
+                    f"Der Quellordner des letzten Imports ist nicht erreichbar:\n{source_path}\n\n"
+                    "Bitte wählen Sie den Ordner erneut aus, damit macOS die Zugriffsberechtigung erteilt."
+                ),
+            )
+            chosen = filedialog.askdirectory(title="Quellordner erneut auswählen")
+            if chosen:
+                self.add_log(f"Quellordner neu gewählt: {chosen}")
+
         def _run_startup_sequence(self) -> None:
             self._show_onboarding()
+            self._ensure_source_access_if_needed()
             self._check_for_incomplete_jobs()
 
 
@@ -253,9 +281,30 @@ else:
             self.after(0, self._run_startup_sequence)
 
         def _run_startup_sequence(self) -> None:
-            """Run startup checks in order: onboarding first, resume checks second."""
+            """Run startup checks in order: onboarding first, source access, resume checks last."""
             self._show_onboarding()
+            self._ensure_source_access_if_needed()
             self._check_for_incomplete_jobs()
+
+        def _ensure_source_access_if_needed(self) -> None:
+            """If the last incomplete job's source folder is inaccessible, prompt the user."""
+            incomplete_jobs = [job for job in self._bridge.get_incomplete_jobs() if job.get("source_path")]
+            if not incomplete_jobs:
+                return
+            source_path = incomplete_jobs[0].get("source_path", "")
+            if not source_path or _check_source_access(source_path):
+                return
+            self.add_log(f"⚠️ Quellordner nicht erreichbar: {source_path}")
+            messagebox.showwarning(
+                "Quellordner nicht erreichbar",
+                (
+                    f"Der Quellordner des letzten Imports ist nicht erreichbar:\n{source_path}\n\n"
+                    "Bitte wählen Sie den Ordner erneut aus, damit macOS die Zugriffsberechtigung erteilt."
+                ),
+            )
+            chosen = filedialog.askdirectory(title="Quellordner erneut auswählen")
+            if chosen:
+                self.add_log(f"Quellordner neu gewählt: {chosen}")
 
         def _show_onboarding(self) -> None:
             """Check Automation permission on every launch; show intro only on first run."""

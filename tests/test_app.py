@@ -114,9 +114,12 @@ def test_run_startup_sequence_runs_onboarding_before_resume_check() -> None:
         def _show_onboarding(self) -> None:
             calls.append("onboarding")
 
+        def _ensure_source_access_if_needed(self) -> None:
+            calls.append("source_access")
+
         def _check_for_incomplete_jobs(self) -> None:
             calls.append("resume")
 
     app.ICloudPhotonatorApp._run_startup_sequence(DummyApp())
 
-    assert calls == ["onboarding", "resume"]
+    assert calls == ["onboarding", "source_access", "resume"]
