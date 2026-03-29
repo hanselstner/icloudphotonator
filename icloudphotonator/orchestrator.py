@@ -663,6 +663,7 @@ class ImportOrchestrator:
             "imported": file_stats[FileStatus.IMPORTED.value],
             "duplicates": duplicate_count,
             "skipped": skipped_total,
+            "staged": self.staging.get_staged_count(),
             "errors": file_stats[FileStatus.ERROR.value],
             "remaining": remaining,
             "current_batch_size": self.throttle.current_batch_size,

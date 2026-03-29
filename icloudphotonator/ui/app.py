@@ -438,7 +438,7 @@ else:
             frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
             frame.pack(fill="x", pady=(0, 8))
             frame.grid_columnconfigure((0, 1, 2), weight=1)
-            labels = ["Entdeckt", "Importiert", "Übersprungen", "Duplikate", "Fehler", "Verbleibend"]
+            labels = ["Entdeckt", "Importiert", "Gestaged", "Duplikate", "Fehler", "Verbleibend"]
             self.stat_cards: dict[str, StatsCard] = {}
             for index, label in enumerate(labels):
                 key = label.lower().replace("ü", "ue")
@@ -668,13 +668,13 @@ else:
                 values = {
                     "entdeckt": self._last_stats.get("discovered", self._last_stats.get("total", 0)),
                     "importiert": self._last_stats.get("imported", 0),
-                    "uebersprungen": self._last_stats.get("skipped", 0),
+                    "gestaged": self._last_stats.get("staged", 0),
                     "duplikate": self._last_stats.get("duplicates", 0),
                     "fehler": self._last_stats.get("errors", 0),
                 }
                 values["verbleibend"] = self._last_stats.get(
                     "remaining",
-                    max(values["entdeckt"] - (values["importiert"] + values["uebersprungen"] + values["duplikate"] + values["fehler"]), 0),
+                    max(values["entdeckt"] - (values["importiert"] + values["duplikate"] + values["fehler"]), 0),
                 )
                 done = max(values["entdeckt"] - values["verbleibend"], 0)
                 for key, value in values.items():

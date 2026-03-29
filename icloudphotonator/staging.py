@@ -125,6 +125,13 @@ class StagingManager:
             if path.exists() and path.is_file():
                 path.unlink()
 
+    def get_staged_count(self) -> int:
+        """Return the number of files currently in the staging directory."""
+        try:
+            return sum(1 for path in self._staging_dir.iterdir() if path.is_file())
+        except OSError:
+            return 0
+
     def get_staging_usage(self) -> tuple[int, int]:
         """Returns (used_bytes, max_bytes)."""
         used_bytes = sum(path.stat().st_size for path in self._staging_dir.rglob("*") if path.is_file())
