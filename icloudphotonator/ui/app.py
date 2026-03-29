@@ -142,15 +142,25 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
             _raise_missing_ui_support()
 
         def _show_onboarding(self) -> None:
-            if _check_onboarding_done():
-                return
-            messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
+            if not _check_onboarding_done():
+                messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
+                _mark_onboarding_done()
+
             self.add_log("Prüfe Automation-Berechtigung...")
             if _check_automation_permission():
                 self.add_log("✅ Automation-Berechtigung erteilt.")
             else:
-                self.add_log("⚠️ Automation-Berechtigung wurde nicht erteilt.")
-            _mark_onboarding_done()
+                self.add_log("⚠️ Automation-Berechtigung nicht erteilt.")
+                open_prefs = messagebox.askyesno(
+                    "Berechtigung fehlt",
+                    "iCloudPhotonator benötigt die Automation-Berechtigung für Fotos.\n\n"
+                    "Möchten Sie die Systemeinstellungen öffnen, um die Berechtigung zu erteilen?",
+                    icon="warning",
+                )
+                if open_prefs:
+                    subprocess.Popen(
+                        ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
+                    )
 
         def _run_startup_sequence(self) -> None:
             self._show_onboarding()
@@ -241,17 +251,26 @@ else:
             self._check_for_incomplete_jobs()
 
         def _show_onboarding(self) -> None:
-            """Show the first-launch permission onboarding before the first import."""
-            if _check_onboarding_done():
-                return
+            """Check Automation permission on every launch; show intro only on first run."""
+            if not _check_onboarding_done():
+                messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
+                _mark_onboarding_done()
 
-            messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
             self.add_log("Prüfe Automation-Berechtigung...")
             if _check_automation_permission():
                 self.add_log("✅ Automation-Berechtigung erteilt.")
             else:
-                self.add_log("⚠️ Automation-Berechtigung wurde nicht erteilt.")
-            _mark_onboarding_done()
+                self.add_log("⚠️ Automation-Berechtigung nicht erteilt.")
+                open_prefs = messagebox.askyesno(
+                    "Berechtigung fehlt",
+                    "iCloudPhotonator benötigt die Automation-Berechtigung für Fotos.\n\n"
+                    "Möchten Sie die Systemeinstellungen öffnen, um die Berechtigung zu erteilen?",
+                    icon="warning",
+                )
+                if open_prefs:
+                    subprocess.Popen(
+                        ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
+                    )
 
         def _build_ui(self) -> None:
             self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
