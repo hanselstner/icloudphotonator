@@ -79,15 +79,12 @@ def _prompt_for_automation_permission() -> bool:
 def _check_automation_permission() -> bool:
     """Check whether the Photos Automation permission has already been granted."""
     try:
-        result = subprocess.run(
-            ["osascript", "-e", 'tell application "Photos" to get name'],
-            capture_output=True,
-            timeout=10,
-            check=False,
-        )
+        from icloudphotonator.photos_preflight import run_applescript
+
+        success, _ = run_applescript('tell application "Photos" to get name')
+        return success
     except Exception:
         return False
-    return result.returncode == 0
 
 
 def _check_onboarding_done() -> bool:

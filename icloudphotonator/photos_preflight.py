@@ -25,6 +25,24 @@ HEALTH_JPEG = bytes.fromhex(
 OSASCRIPT_TIMEOUT = 15
 
 
+def run_applescript(script: str) -> tuple[bool, str]:
+    """Run an AppleScript in-process via NSAppleScript (PyObjC).
+
+    Returns (success, output_or_error_message).
+    """
+    from Foundation import NSAppleScript  # type: ignore[import-untyped]
+
+    nsa = NSAppleScript.alloc().initWithSource_(script)
+    result, error_info = nsa.executeAndReturnError_(None)
+    if error_info is not None:
+        msg = error_info.get("NSAppleScriptErrorMessage", "Unknown error")
+        num = error_info.get("NSAppleScriptErrorNumber", -1)
+        return False, f"Error {num}: {msg}"
+    if result is not None:
+        return True, result.stringValue() or ""
+    return True, ""
+
+
 @dataclass
 class PreflightResult:
     """Result of a preflight check."""
@@ -36,57 +54,51 @@ class PreflightResult:
 class PhotosPreflight:
     """Pre-flight checks ensuring Apple Photos is ready for import."""
 
-    def _run_osascript(self, script: str, timeout: int = OSASCRIPT_TIMEOUT) -> subprocess.CompletedProcess:
-        """Run an AppleScript via osascript with timeout."""
-        return subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+    def _run_applescript(self, script: str) -> tuple[bool, str]:
+        """Run an AppleScript in-process via the standalone run_applescript helper."""
+        return run_applescript(script)
 
     def check_photos_running(self) -> bool:
         """Check if Photos.app is running."""
         try:
-            result = self._run_osascript(
+            success, output = self._run_applescript(
                 'tell application "System Events" to (name of processes) contains "Photos"'
             )
-            return result.returncode == 0 and "true" in result.stdout.lower()
-        except (subprocess.TimeoutExpired, OSError) as exc:
+            return success and "true" in output.lower()
+        except Exception as exc:
             logger.warning("Photos-Running-Check fehlgeschlagen: %s", exc)
             return False
 
     def check_photos_responsive(self) -> bool:
         """Check if Photos.app responds to AppleScript commands."""
         try:
-            result = self._run_osascript('tell application "Photos" to get name')
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, OSError) as exc:
+            success, _output = self._run_applescript('tell application "Photos" to get name')
+            return success
+        except Exception as exc:
             logger.warning("Photos-Responsive-Check fehlgeschlagen: %s", exc)
             return False
 
     def check_automation_permission(self) -> bool:
         """Check if we have Automation permission for Photos."""
         try:
-            result = self._run_osascript('tell application "Photos" to get name')
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, OSError) as exc:
+            success, _output = self._run_applescript('tell application "Photos" to get name')
+            return success
+        except Exception as exc:
             logger.warning("Automation-Permission-Check fehlgeschlagen: %s", exc)
             return False
 
     def _check_has_window(self) -> bool:
         """Check that Photos.app has at least one window (not stuck headless)."""
         try:
-            result = self._run_osascript(
+            success, output = self._run_applescript(
                 'tell application "System Events" to tell process "Photos" '
                 'to get count of windows'
             )
-            if result.returncode != 0:
+            if not success:
                 return False
-            count = int(result.stdout.strip())
+            count = int(output.strip())
             return count >= 1
-        except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+        except (ValueError, Exception) as exc:
             logger.warning("Photos-Window-Check fehlgeschlagen: %s", exc)
             return False
 
@@ -101,14 +113,14 @@ class PhotosPreflight:
                     f'tell application "Photos" to import POSIX file "{tmp_path}" '
                     f'skip check duplicates true'
                 )
-                result = self._run_osascript(script, timeout=30)
-                return result.returncode == 0
+                success, _output = self._run_applescript(script)
+                return success
             finally:
                 try:
                     tmp_path.unlink()
                 except OSError:
                     pass
-        except (subprocess.TimeoutExpired, OSError) as exc:
+        except Exception as exc:
             logger.warning("Health-Image-Check fehlgeschlagen: %s", exc)
             return False
 
@@ -163,8 +175,8 @@ class PhotosPreflight:
         """Bring Photos to the foreground via AppleScript."""
         logger.info("Photos wird aktiviert…")
         try:
-            self._run_osascript('tell application "Photos" to activate')
-        except (subprocess.TimeoutExpired, OSError) as exc:
+            self._run_applescript('tell application "Photos" to activate')
+        except Exception as exc:
             logger.warning("Photos-Activate fehlgeschlagen: %s", exc)
 
     def ensure_photos_responsive(self) -> bool:

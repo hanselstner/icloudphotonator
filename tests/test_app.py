@@ -45,24 +45,21 @@ def test_open_automation_settings_uses_system_preferences_deeplink(monkeypatch) 
 def test_check_automation_permission_runs_minimal_photos_applescript(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run(command, capture_output=False, timeout=None, check=False):
-        captured["command"] = command
-        captured["capture_output"] = capture_output
-        captured["timeout"] = timeout
-        captured["check"] = check
-        return SimpleNamespace(returncode=0)
+    def fake_run_applescript(script: str):
+        captured["script"] = script
+        return (True, "Photos")
 
-    monkeypatch.setattr(app.subprocess, "run", fake_run)
+    monkeypatch.setattr("icloudphotonator.photos_preflight.run_applescript", fake_run_applescript)
 
     assert app._check_automation_permission() is True
-    assert captured["command"] == ["osascript", "-e", 'tell application "Photos" to get name']
-    assert captured["capture_output"] is True
-    assert captured["timeout"] == 10
-    assert captured["check"] is False
+    assert captured["script"] == 'tell application "Photos" to get name'
 
 
 def test_check_automation_permission_returns_false_on_failure(monkeypatch) -> None:
-    monkeypatch.setattr(app.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=1))
+    monkeypatch.setattr(
+        "icloudphotonator.photos_preflight.run_applescript",
+        lambda script: (False, "Error -1743: Not authorized"),
+    )
 
     assert app._check_automation_permission() is False
 
