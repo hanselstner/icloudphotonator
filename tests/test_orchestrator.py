@@ -150,6 +150,7 @@ class StubNetworkMonitor:
         self.reconnect_callbacks: list = []
         self.started = False
         self.stopped = False
+        self.is_available = True
         type(self).instances.append(self)
 
     def on_disconnect(self, callback) -> None:
