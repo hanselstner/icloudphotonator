@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import logging
+import subprocess
 import threading
 import unicodedata
 from datetime import datetime
@@ -72,6 +73,8 @@ class ImportOrchestrator:
         self._active_job: Job | None = None
         self._network_monitor: NetworkMonitor | None = None
         self._network_pause_requested = False
+        self._pause_reason: str | None = None
+        self._auto_restart_count = 0
         self.logger = logging.getLogger("icloudphotonator.orchestrator")
 
     async def start_import(self, source_path: Path, job_id: str | None = None):
@@ -229,11 +232,33 @@ class ImportOrchestrator:
 
     def resume(self):
         """Resume the import."""
+        self._pause_reason = None
         self._paused.set()
         self._paused_thread.set()
         if self._active_job and self._active_job.state == JobState.PAUSED:
             self._active_job.resume()
             self._emit_log("Import fortgesetzt.")
+
+    async def restart_photos(self) -> None:
+        """Quit and relaunch Photos.app, then reset stuck importing files."""
+        self._emit_log("🔄 Photos.app wird neu gestartet...")
+        try:
+            subprocess.run(
+                ["osascript", "-e", 'tell application "Photos" to quit'],
+                timeout=5,
+                capture_output=True,
+            )
+        except subprocess.TimeoutExpired:
+            subprocess.run(["pkill", "-9", "-x", "Photos"], capture_output=True)
+        await asyncio.sleep(3)
+        subprocess.run(["open", "-a", "Photos"])
+        await asyncio.sleep(5)
+        # Reset files stuck in importing state back to pending
+        self.db._connection.execute(
+            "UPDATE files SET status='pending', error_message=NULL WHERE status='importing'"
+        )
+        self._consecutive_silent_failures = 0
+        self._emit_log("✅ Photos.app neu gestartet.")
 
     def cancel(self):
         """Cancel the import."""
@@ -646,20 +671,26 @@ class ImportOrchestrator:
             if self._cancelled:
                 break
 
-            # Consecutive failure detection: pause after 3 batches with zero imports
+            # Consecutive failure detection: auto-restart Photos after 3 batches with zero imports
             if batch_stats["imported"] == 0:
                 consecutive_failed_batches += 1
                 if consecutive_failed_batches >= 3:
-                    self._emit_log(
-                        "⚠️ Photos.app akzeptiert keine Imports mehr "
-                        "(3 Batches ohne Erfolg). Bitte Photos.app beenden "
-                        "und neu starten, dann Import fortsetzen."
-                    )
-                    self.db.log_action(job.job_id, None, "auto_pause", "3 consecutive batches without success")
-                    self.pause()
+                    self._auto_restart_count += 1
                     consecutive_failed_batches = 0
+                    if self._auto_restart_count >= 3:
+                        self._emit_log(
+                            "❌ Photos.app reagiert nach 3 Neustarts nicht. Bitte manuell prüfen."
+                        )
+                        self.db.log_action(job.job_id, None, "auto_pause", "3 restart attempts failed")
+                        self._pause_reason = "photos_unresponsive"
+                        self.pause()
+                    else:
+                        self.db.log_action(job.job_id, None, "auto_restart", f"restart attempt {self._auto_restart_count}")
+                        await self.restart_photos()
+                        continue
             else:
                 consecutive_failed_batches = 0
+                self._auto_restart_count = 0
 
             if fatal_permission_error:
                 self._emit_log("❌ Die Automation-Berechtigung für Fotos fehlt. Import wird gestoppt.")
@@ -703,6 +734,7 @@ class ImportOrchestrator:
             "total_processed": self.throttle.total_processed,
             "paused": not self._paused.is_set(),
             "cancelled": self._cancelled,
+            "pause_reason": self._pause_reason,
         }
 
     def _transition_job(self, job: Job, target: JobState, action: str, details: str | None = None) -> None:

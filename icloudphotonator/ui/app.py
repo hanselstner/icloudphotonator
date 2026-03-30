@@ -457,6 +457,9 @@ else:
             self.stop_btn.pack(side="left", padx=6, expand=True, fill="x")
             self.retry_btn = ctk.CTkButton(frame, text="🔄 Retry Fehler", fg_color="#6f42c1", hover_color="#5a32a3", command=self._on_retry_errors, state="disabled")
             self.retry_btn.pack(side="left", padx=(6, 0), expand=True, fill="x")
+            self.restart_photos_btn = ctk.CTkButton(frame, text="🔄 Photos neu starten & fortfahren", fg_color="#17a2b8", hover_color="#138496", command=self._on_restart_photos)
+            self.restart_photos_btn.pack(side="left", padx=(6, 0), expand=True, fill="x")
+            self.restart_photos_btn.pack_forget()
 
         def _build_log_area(self) -> None:
             ctk.CTkLabel(self.main_frame, text="Log", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(0, 6))
@@ -605,11 +608,24 @@ else:
             self._set_status("🔄 Importiere...", indeterminate=True)
             self._bridge.retry_errors(self._last_job_id)
 
+        def _on_restart_photos(self) -> None:
+            self.restart_photos_btn.pack_forget()
+            self._is_paused = False
+            self.pause_btn.configure(text="⏸ Pause")
+            self._set_status("🔄 Photos wird neu gestartet...")
+            self.add_log("Photos.app wird neu gestartet...")
+            self._bridge.restart_photos()
+
         def _handle_progress(self, payload: dict) -> None:
             if isinstance(payload, dict):
                 self._last_error_count = payload.get("errors", self._last_error_count)
                 if "job_id" in payload:
                     self._last_job_id = payload["job_id"]
+                pause_reason = payload.get("pause_reason")
+                if pause_reason == "photos_unresponsive":
+                    self.after(0, lambda: self.restart_photos_btn.pack(side="left", padx=(6, 0), expand=True, fill="x"))
+                elif pause_reason is None:
+                    self.after(0, self.restart_photos_btn.pack_forget)
                 self.update_stats(payload)
 
         def _handle_complete(self) -> None:
@@ -638,6 +654,7 @@ else:
             self.pause_btn.configure(state="disabled", text="⏸ Pause")
             self.stop_btn.configure(state="disabled")
             self.retry_btn.configure(state="normal" if self._last_error_count > 0 else "disabled")
+            self.restart_photos_btn.pack_forget()
             self.browse_btn.configure(state="normal")
             self.album_entry.configure(state="normal")
             self.album_auto_btn.configure(state="normal")

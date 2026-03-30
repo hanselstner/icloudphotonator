@@ -128,6 +128,30 @@ class BackendBridge:
     def stop(self) -> None:
         self._dispatch_to_orchestrator("stop")
 
+    def restart_photos(self) -> None:
+        """Restart Photos.app and resume import."""
+        orchestrator = self._orchestrator
+        if orchestrator is None:
+            return
+        restart = getattr(orchestrator, "restart_photos", None)
+        resume = getattr(orchestrator, "resume", None)
+        if not callable(restart) or not callable(resume):
+            return
+
+        async def _restart_and_resume() -> None:
+            try:
+                await restart()
+                resume()
+            except Exception as exc:
+                logger.exception("restart_photos failed")
+                self._emit_error(str(exc))
+
+        if self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(
+                lambda: asyncio.ensure_future(_restart_and_resume())
+            )
+            return
+
     def _dispatch_to_orchestrator(self, method_name: str) -> None:
         orchestrator = self._orchestrator
         method = getattr(orchestrator, method_name, None) if orchestrator else None
