@@ -459,9 +459,19 @@ class ImportOrchestrator:
                 phase_label = "Staging vorbereitet." if next_state == JobState.STAGING else "Import gestartet."
                 self._emit_log(phase_label)
 
+            # Skip batch if network is down to avoid marking files as errors
+            if self._network_monitor is not None and not self._network_monitor.is_available:
+                self._emit_log("⏸️ Netzwerk nicht verfügbar — Batch wird übersprungen.")
+                await self._wait_if_paused()
+                continue
+
             row_by_path = {row["path"]: row for row in pending_rows}
             staged_pairs, staging_failures = await self.staging.stage_files(file_infos)
             self._mark_staging_failures(job, row_by_path, staging_failures)
+
+            await self._wait_if_paused()
+            if self._cancelled:
+                break
 
             if job.state == JobState.STAGING and staged_pairs:
                 self._transition_job(job, JobState.IMPORTING, "importing")
@@ -632,6 +642,10 @@ class ImportOrchestrator:
             )
             self._notify_progress(self.get_job_stats(job.job_id))
 
+            await self._wait_if_paused()
+            if self._cancelled:
+                break
+
             # Consecutive failure detection: pause after 3 batches with zero imports
             if batch_stats["imported"] == 0:
                 consecutive_failed_batches += 1
@@ -727,8 +741,17 @@ class ImportOrchestrator:
     def _mark_staging_failures(self, job: Job, row_by_path: dict[str, dict], failures) -> None:
         for failure in failures:
             file_row = row_by_path[str(failure.file_info.path)]
-            self.db.update_file_status(file_row["id"], FileStatus.ERROR, failure.error)
-            self.db.log_action(job.job_id, file_row["id"], "staging_error", failure.error)
+            error_str = failure.error or ""
+            is_network_missing = (
+                ("[Errno 2]" in error_str or "No such file or directory" in error_str)
+                and str(failure.file_info.path).startswith("/Volumes/")
+            )
+            if is_network_missing:
+                self.db.update_file_status(file_row["id"], FileStatus.PENDING)
+                self.db.log_action(job.job_id, file_row["id"], "network_retry", error_str)
+            else:
+                self.db.update_file_status(file_row["id"], FileStatus.ERROR, failure.error)
+                self.db.log_action(job.job_id, file_row["id"], "staging_error", failure.error)
 
     def _apply_report(
         self,
