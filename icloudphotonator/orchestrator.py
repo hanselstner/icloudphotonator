@@ -74,7 +74,7 @@ class ImportOrchestrator:
         self._network_monitor: NetworkMonitor | None = None
         self._network_pause_requested = False
         self._pause_reason: str | None = None
-        self._auto_restart_count = 0
+        self._escalation_level = 0
         self.logger = logging.getLogger("icloudphotonator.orchestrator")
 
     async def start_import(self, source_path: Path, job_id: str | None = None):
@@ -257,7 +257,6 @@ class ImportOrchestrator:
         self.db._connection.execute(
             "UPDATE files SET status='pending', error_message=NULL WHERE status='importing'"
         )
-        self._consecutive_silent_failures = 0
         self._emit_log("✅ Photos.app neu gestartet.")
 
     def cancel(self):
@@ -672,26 +671,17 @@ class ImportOrchestrator:
             if self._cancelled:
                 break
 
-            # Consecutive failure detection: auto-restart Photos after 3 batches with zero imports
+            # Consecutive failure detection: escalating recovery
             if batch_stats["imported"] == 0:
                 consecutive_failed_batches += 1
                 if consecutive_failed_batches >= 3:
-                    self._auto_restart_count += 1
                     consecutive_failed_batches = 0
-                    if self._auto_restart_count >= 3:
-                        self._emit_log(
-                            "❌ Photos.app reagiert nach 3 Neustarts nicht. Bitte manuell prüfen."
-                        )
-                        self.db.log_action(job.job_id, None, "auto_pause", "3 restart attempts failed")
-                        self._pause_reason = "photos_unresponsive"
-                        self.pause()
-                    else:
-                        self.db.log_action(job.job_id, None, "auto_restart", f"restart attempt {self._auto_restart_count}")
-                        await self.restart_photos()
+                    should_continue = await self._handle_escalation(job)
+                    if should_continue:
                         continue
             else:
                 consecutive_failed_batches = 0
-                self._auto_restart_count = 0
+                self._escalation_level = 0
 
             if fatal_permission_error:
                 self._emit_log("❌ Die Automation-Berechtigung für Fotos fehlt. Import wird gestoppt.")
@@ -706,6 +696,79 @@ class ImportOrchestrator:
                 scan_done_event is not None and not scan_done_event.is_set()
             ):
                 await asyncio.sleep(self.throttle.get_cooldown())
+
+
+    async def _handle_escalation(self, job: Job) -> bool:
+        """Handle escalating recovery when consecutive failures occur.
+
+        Returns True if the import loop should ``continue`` (retry immediately),
+        False otherwise.
+
+        Escalation levels:
+          0 → auto-pause 2 min, then resume
+          1 → auto-pause 5 min, then resume
+          2 → restart Photos.app, then resume
+          3 → manual pause (user must click resume)
+        """
+        level = self._escalation_level
+
+        if level == 0:
+            self._escalation_level = 1
+            self.db.log_action(job.job_id, None, "auto_pause", "escalation_level=0, pause 120s")
+            await self._auto_pause_resume(job, seconds=120)
+            return True
+        elif level == 1:
+            self._escalation_level = 2
+            self.db.log_action(job.job_id, None, "auto_pause", "escalation_level=1, pause 300s")
+            await self._auto_pause_resume(job, seconds=300)
+            return True
+        elif level == 2:
+            self._escalation_level = 3
+            self.db.log_action(job.job_id, None, "auto_restart", "escalation_level=2, restarting Photos")
+            await self.restart_photos()
+            return True
+        else:
+            # Level 3+: manual pause
+            self._emit_log(
+                "❌ Photos.app reagiert nach automatischen Maßnahmen nicht. Bitte manuell prüfen."
+            )
+            self.db.log_action(job.job_id, None, "auto_pause", "escalation_level=3, manual pause")
+            self._pause_reason = "photos_unresponsive"
+            self.pause()
+            return False
+
+    async def _auto_pause_resume(self, job: Job, seconds: int) -> None:
+        """Automatically pause for *seconds*, showing a countdown, then resume."""
+        minutes = seconds // 60
+        remaining_secs = seconds % 60
+        if remaining_secs:
+            duration_label = f"{minutes} Min {remaining_secs}s"
+        else:
+            duration_label = f"{minutes} Minuten" if minutes != 1 else "1 Minute"
+        self._emit_log(f"⏸️ Photos macht Probleme. Pausiere {duration_label}...")
+
+        self._pause_reason = "auto_pause"
+        self.pause()
+
+        elapsed = 0
+        interval = 30  # update countdown every 30 seconds
+        while elapsed < seconds:
+            if self._cancelled:
+                return
+            wait_step = min(interval, seconds - elapsed)
+            await asyncio.sleep(wait_step)
+            elapsed += wait_step
+            remaining = seconds - elapsed
+            if remaining > 0 and not self._cancelled:
+                self._emit_log(f"⏸️ Noch {remaining}s Pause...")
+                # Push progress so UI sees countdown
+                if self._active_job:
+                    self._notify_progress(self.get_job_stats(self._active_job.job_id))
+
+        if not self._cancelled:
+            self._emit_log("▶️ Versuche es erneut...")
+            self.resume()
+
 
     def get_job_stats(self, job_id: str) -> dict:
         """Get current stats for a job."""
