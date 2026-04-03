@@ -89,9 +89,19 @@ class StagingManager:
                     progress_callback(file_info, file_info.path)
                 continue
 
+            if max_bytes and file_info.size > max_bytes:
+                size_mb = file_info.size / 1024 / 1024
+                max_mb = max_bytes / 1024 / 1024
+                failures.append(StagingFailure(
+                    file_info=file_info,
+                    staged_path=file_info.path,
+                    error=f"Datei zu groß für Staging ({size_mb:.0f} MB > {max_mb:.0f} MB Limit)",
+                ))
+                continue
+
             projected_usage += file_info.size
             if max_bytes and projected_usage > max_bytes:
-                raise RuntimeError("Staging area is full; increase max_staging_size_gb or clean up staged files.")
+                break  # batch is full, rest will be picked up next round
 
             # Normalize filename to NFD for macOS filesystem compatibility
             # (macOS HFS+/APFS uses NFD, but Python strings default to NFC)
