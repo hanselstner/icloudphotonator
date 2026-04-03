@@ -564,108 +564,109 @@ class ImportOrchestrator:
                 self.db.update_file_status(staged_row_by_path[str(file_info.path)]["id"], FileStatus.IMPORTING)
 
             # Quick responsiveness check before each batch
-            if not await asyncio.to_thread(self.preflight.ensure_photos_responsive):
-                if not await asyncio.to_thread(self.preflight.check_automation_permission):
-                    self._emit_log("❌ Automation-Berechtigung fehlt!")
-                    break
-                self._emit_log("⚠️ Photos.app reagiert nicht — Batch wird als Fehler markiert.")
-                for file_info, _ in staged_pairs:
-                    row = staged_row_by_path[str(file_info.path)]
-                    self.db.update_file_status(row["id"], FileStatus.ERROR, "Photos.app reagiert nicht")
-                    self.db.log_action(job.job_id, row["id"], "import_error", "Photos.app reagiert nicht")
-                self._sync_job_counts(job)
-                self._notify_progress(self.get_job_stats(job.job_id))
-                continue
-
-            result = await asyncio.to_thread(
-                self.importer.import_batch,
-                staged_paths,
-                skip_dups=True,
-                auto_live=True,
-                use_exiftool=False,
-                album=self.album,
-                report_dir=None,
-                timeout=120,
-                library=self.library,
-            )
-
-            # If the batch crashed (no report generated), retry each file individually
-            if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
-                self._emit_log(f"Batch fehlgeschlagen, versuche {len(staged_paths)} Dateien einzeln...")
-                for staged_path in staged_paths:
-                    if self._cancelled:
+            try:
+                if not await asyncio.to_thread(self.preflight.ensure_photos_responsive):
+                    if not await asyncio.to_thread(self.preflight.check_automation_permission):
+                        self._emit_log("❌ Automation-Berechtigung fehlt!")
                         break
-                    single_result = await asyncio.to_thread(
-                        self.importer.import_batch,
-                        [staged_path],
-                        skip_dups=True,
-                        auto_live=True,
-                        use_exiftool=False,
-                        album=self.album,
-                        report_dir=None,
-                        timeout=30,
-                        library=self.library,
-                    )
-                    # Find the original file info for this staged path
-                    norm_key = unicodedata.normalize("NFD", str(staged_path.resolve()))
-                    original_info = staged_lookup.get(norm_key)
-                    if original_info is None:
-                        continue
-                    single_row_by_path = {str(original_info.path): staged_row_by_path[str(original_info.path)]}
-                    single_lookup = {norm_key: original_info}
-                    self._apply_report(job, single_row_by_path, single_lookup, single_result)
-                    # If single file also crashed and _apply_report didn't already mark it, set error
-                    if not getattr(single_result, 'success', True) and getattr(single_result, 'report_path', None) is None:
-                        file_row = staged_row_by_path.get(str(original_info.path))
-                        if file_row:
-                            current = self.db._connection.execute(
-                                'SELECT status FROM files WHERE id = ?', (file_row['id'],)
-                            ).fetchone()
-                            if current and current[0] == FileStatus.IMPORTING.value:
-                                self.db.update_file_status(file_row['id'], FileStatus.ERROR, error_message=f'Import gescheitert: {original_info.path.name}')
+                    self._emit_log("⚠️ Photos.app reagiert nicht — Batch wird als Fehler markiert.")
+                    for file_info, _ in staged_pairs:
+                        row = staged_row_by_path[str(file_info.path)]
+                        self.db.update_file_status(row["id"], FileStatus.ERROR, "Photos.app reagiert nicht")
+                        self.db.log_action(job.job_id, row["id"], "import_error", "Photos.app reagiert nicht")
+                    self._sync_job_counts(job)
+                    self._notify_progress(self.get_job_stats(job.job_id))
+                    continue
 
-                # Safety net: mark any files still in importing as error
-                for file_info, _ in staged_pairs:
-                    row = staged_row_by_path.get(str(file_info.path))
-                    if row:
-                        current_status = self.db._connection.execute(
-                            'SELECT status FROM files WHERE id = ?', (row['id'],)
-                        ).fetchone()
-                        if current_status and current_status[0] == FileStatus.IMPORTING.value:
-                            self.db.update_file_status(row['id'], FileStatus.ERROR, error_message=f'Import gescheitert: {file_info.path.name}')
+                result = await asyncio.to_thread(
+                    self.importer.import_batch,
+                    staged_paths,
+                    skip_dups=True,
+                    auto_live=True,
+                    use_exiftool=False,
+                    album=self.album,
+                    report_dir=None,
+                    timeout=120,
+                    library=self.library,
+                )
+
+                # If the batch crashed (no report generated), retry each file individually
+                if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
+                    self._emit_log(f"Batch fehlgeschlagen, versuche {len(staged_paths)} Dateien einzeln...")
+                    for staged_path in staged_paths:
+                        if self._cancelled:
+                            break
+                        single_result = await asyncio.to_thread(
+                            self.importer.import_batch,
+                            [staged_path],
+                            skip_dups=True,
+                            auto_live=True,
+                            use_exiftool=False,
+                            album=self.album,
+                            report_dir=None,
+                            timeout=30,
+                            library=self.library,
+                        )
+                        # Find the original file info for this staged path
+                        norm_key = unicodedata.normalize("NFD", str(staged_path.resolve()))
+                        original_info = staged_lookup.get(norm_key)
+                        if original_info is None:
+                            continue
+                        single_row_by_path = {str(original_info.path): staged_row_by_path[str(original_info.path)]}
+                        single_lookup = {norm_key: original_info}
+                        self._apply_report(job, single_row_by_path, single_lookup, single_result)
+                        # If single file also crashed and _apply_report didn't already mark it, set error
+                        if not getattr(single_result, 'success', True) and getattr(single_result, 'report_path', None) is None:
+                            file_row = staged_row_by_path.get(str(original_info.path))
+                            if file_row:
+                                current = self.db._connection.execute(
+                                    'SELECT status FROM files WHERE id = ?', (file_row['id'],)
+                                ).fetchone()
+                                if current and current[0] == FileStatus.IMPORTING.value:
+                                    self.db.update_file_status(file_row['id'], FileStatus.ERROR, error_message=f'Import gescheitert: {original_info.path.name}')
+
+                    # Safety net: mark any files still in importing as error
+                    for file_info, _ in staged_pairs:
+                        row = staged_row_by_path.get(str(file_info.path))
+                        if row:
+                            current_status = self.db._connection.execute(
+                                'SELECT status FROM files WHERE id = ?', (row['id'],)
+                            ).fetchone()
+                            if current_status and current_status[0] == FileStatus.IMPORTING.value:
+                                self.db.update_file_status(row['id'], FileStatus.ERROR, error_message=f'Import gescheitert: {file_info.path.name}')
+
+                    self._sync_job_counts(job)
+                    self._notify_progress(self.get_job_stats(job.job_id))
+
+                if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
+                    # Already handled above via single-file retry
+                    processed_paths = {row["path"] for row in row_by_path.values()}
+                else:
+                    processed_paths = self._apply_report(job, staged_row_by_path, staged_lookup, result)
+
+                fatal_permission_error = self._has_only_fatal_permission_errors(getattr(result, "errors", None))
+
+                if staging_failures or result.error_count > 0:
+                    self.throttle.report_failure(len(file_infos))
+                else:
+                    self.throttle.report_success(len(staged_pairs))
 
                 self._sync_job_counts(job)
+                batch_stats = self._get_batch_status_counts(list(row_by_path.values()))
+                self._emit_log(
+                    f"✅ {batch_stats['imported']} importiert, "
+                    f"⏭️ {batch_stats['skipped']} übersprungen, "
+                    f"❌ {batch_stats['errors']} Fehler"
+                )
                 self._notify_progress(self.get_job_stats(job.job_id))
-
-            cleanup_paths: list[Path] = []
-            if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
-                # Already handled above via single-file retry
-                processed_paths = {row["path"] for row in row_by_path.values()}
-            else:
-                processed_paths = self._apply_report(job, staged_row_by_path, staged_lookup, result)
-
-            fatal_permission_error = self._has_only_fatal_permission_errors(getattr(result, "errors", None))
-
-            for file_info, staged_path in staged_pairs:
-                if staged_path != file_info.path:
-                    cleanup_paths.append(staged_path)
-
-            if cleanup_paths:
-                await asyncio.to_thread(self.staging.cleanup_staged, cleanup_paths)
-
-            if staging_failures or result.error_count > 0:
-                self.throttle.report_failure(len(file_infos))
-            else:
-                self.throttle.report_success(len(staged_pairs))
-
-            self._sync_job_counts(job)
-            batch_stats = self._get_batch_status_counts(list(row_by_path.values()))
-            self._emit_log(
-                f"✅ {batch_stats['imported']} importiert, "
-                f"⏭️ {batch_stats['skipped']} übersprungen, "
-                f"❌ {batch_stats['errors']} Fehler"
-            )
-            self._notify_progress(self.get_job_stats(job.job_id))
+            finally:
+                # ALWAYS clean up ALL staged files after processing, regardless of outcome
+                cleanup_paths: list[Path] = []
+                for file_info, staged_path in staged_pairs:
+                    if staged_path != file_info.path:
+                        cleanup_paths.append(staged_path)
+                if cleanup_paths:
+                    await asyncio.to_thread(self.staging.cleanup_staged, cleanup_paths)
 
             await self._wait_if_paused()
             if self._cancelled:
