@@ -695,17 +695,23 @@ class ImportOrchestrator:
                 break
 
             # Consecutive failure detection: escalating recovery
-            if batch_stats["imported"] == 0:
+            # Only escalate on real Photos errors, NOT on duplicates or known file defects
+            photos_errors = batch_stats.get("photos_errors", 0)
+            if photos_errors > 0 and batch_stats["imported"] == 0:
                 consecutive_failed_batches += 1
                 if consecutive_failed_batches >= 3:
                     consecutive_failed_batches = 0
                     should_continue = await self._handle_escalation(job)
                     if should_continue:
                         continue
-            else:
+            elif batch_stats["imported"] > 0:
                 consecutive_failed_batches = 0
                 self._escalation_level = 0
                 self._imports_since_restart += batch_stats["imported"]
+            elif batch_stats.get("errors", 0) == 0 or photos_errors == 0:
+                # Only duplicates or known file errors — no Photos problem
+                consecutive_failed_batches = 0
+                self._escalation_level = 0
 
             # Preventive Photos restart after N successful imports
             if self._imports_since_restart >= self.RESTART_PHOTOS_EVERY:
@@ -1054,7 +1060,7 @@ class ImportOrchestrator:
 
     def _get_batch_status_counts(self, file_rows: list[dict]) -> dict[str, int]:
         if not file_rows:
-            return {"imported": 0, "skipped": 0, "errors": 0}
+            return {"imported": 0, "skipped": 0, "errors": 0, "photos_errors": 0}
 
         file_ids = [row["id"] for row in file_rows]
         placeholders = ", ".join("?" for _ in file_ids)
@@ -1063,7 +1069,7 @@ class ImportOrchestrator:
             file_ids,
         ).fetchall()
 
-        batch_stats = {"imported": 0, "skipped": 0, "errors": 0}
+        batch_stats = {"imported": 0, "skipped": 0, "errors": 0, "photos_errors": 0}
         for row in rows:
             status = row["status"]
             count = int(row["count"])
@@ -1073,6 +1079,18 @@ class ImportOrchestrator:
                 batch_stats["skipped"] += count
             elif status == FileStatus.ERROR.value:
                 batch_stats["errors"] += count
+
+        # Count Photos-specific errors (real Photos.app problems, not file defects)
+        if batch_stats["errors"] > 0:
+            photos_error_count = self.db._connection.execute(
+                f"""SELECT COUNT(*) AS count FROM files
+                    WHERE id IN ({placeholders})
+                    AND status = ?
+                    AND (error_message LIKE 'Photos.app%' OR error_message LIKE '%Photos macht Probleme%')""",
+                [*file_ids, FileStatus.ERROR.value],
+            ).fetchone()
+            batch_stats["photos_errors"] = int(photos_error_count["count"]) if photos_error_count else 0
+
         return batch_stats
 
     def _mark_stuck_importing(self, job_id: str) -> int:
