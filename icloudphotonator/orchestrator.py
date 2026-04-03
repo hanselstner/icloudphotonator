@@ -668,13 +668,14 @@ class ImportOrchestrator:
 
                 fatal_permission_error = self._has_only_fatal_permission_errors(getattr(result, "errors", None))
 
+                self._sync_job_counts(job)
+                batch_stats = self._get_batch_status_counts(list(row_by_path.values()))
+
                 if staging_failures or result.error_count > 0:
                     self.throttle.report_failure(len(file_infos))
                 else:
-                    self.throttle.report_success(len(staged_pairs))
-
-                self._sync_job_counts(job)
-                batch_stats = self._get_batch_status_counts(list(row_by_path.values()))
+                    # Only count real imports for throttle (drives extended cooldown)
+                    self.throttle.report_success(batch_stats["imported"])
                 self._emit_log(
                     f"✅ {batch_stats['imported']} importiert, "
                     f"⏭️ {batch_stats['skipped']} übersprungen, "
@@ -736,7 +737,13 @@ class ImportOrchestrator:
             if self.db.get_pending_files(job.job_id, limit=1) or (
                 scan_done_event is not None and not scan_done_event.is_set()
             ):
-                await asyncio.sleep(self.throttle.get_cooldown())
+                if batch_stats["imported"] > 0:
+                    # Real imports happened — Photos needs time to process
+                    cooldown = self.throttle.get_cooldown()
+                else:
+                    # Only duplicates/skips/known errors — Photos didn't do anything
+                    cooldown = 5
+                await asyncio.sleep(cooldown)
 
 
     async def _handle_escalation(self, job: Job) -> bool:
