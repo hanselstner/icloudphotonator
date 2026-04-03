@@ -43,7 +43,7 @@ class ImportOrchestrator:
 
     MIN_SCAN_BUFFER = 50
     SCAN_PROGRESS_LOG_INTERVAL = 25
-    RESTART_PHOTOS_EVERY = 200
+    RESTART_PHOTOS_EVERY = 500
 
     def __init__(
         self,
@@ -243,23 +243,44 @@ class ImportOrchestrator:
 
     async def restart_photos(self) -> None:
         """Quit and relaunch Photos.app, then reset stuck importing files."""
-        self._emit_log("🔄 Photos.app wird neu gestartet...")
+        self._emit_log("🔄 Photos.app wird beendet (graceful)...")
         try:
             subprocess.run(
                 ["osascript", "-e", 'tell application "Photos" to quit'],
-                timeout=5,
+                timeout=10,
                 capture_output=True,
             )
         except subprocess.TimeoutExpired:
+            pass
+
+        # Wait for Photos to actually quit (up to 60 seconds)
+        for i in range(12):
+            result = subprocess.run(["pgrep", "-x", "Photos"], capture_output=True)
+            if result.returncode != 0:
+                self._emit_log("✅ Photos.app beendet.")
+                break
+            self._emit_log(f"⏳ Warte auf Photos.app... ({(i + 1) * 5}s)")
+            await asyncio.sleep(5)
+        else:
+            self._emit_log("⚠️ Photos reagiert nicht, force-kill...")
             subprocess.run(["pkill", "-9", "-x", "Photos"], capture_output=True)
-        await asyncio.sleep(3)
+            await asyncio.sleep(3)
+
+        # Wait before restarting
+        self._emit_log("⏳ Warte 10 Sekunden vor Neustart...")
+        await asyncio.sleep(10)
+
+        # Restart
         subprocess.run(["open", "-a", "Photos"])
-        await asyncio.sleep(5)
+        self._emit_log("⏳ Warte 60 Sekunden bis Photos bereit ist...")
+        await asyncio.sleep(60)
+
         # Reset files stuck in importing state back to pending
         self.db._connection.execute(
             "UPDATE files SET status='pending', error_message=NULL WHERE status='importing'"
         )
-        self._emit_log("✅ Photos.app neu gestartet.")
+        self.db._connection.commit()
+        self._emit_log("✅ Photos.app neu gestartet und bereit.")
 
     def cancel(self):
         """Cancel the import."""
@@ -693,8 +714,8 @@ class ImportOrchestrator:
                 )
                 await self.restart_photos()
                 self._imports_since_restart = 0
-                self._emit_log("⏳ Warte 60 Sekunden nach Neustart...")
-                await asyncio.sleep(60)
+                self._emit_log("⏳ Warte 120 Sekunden nach Neustart...")
+                await asyncio.sleep(120)
                 self._emit_log("▶️ Weiter geht's!")
 
             if fatal_permission_error:

@@ -1,10 +1,10 @@
 from icloudphotonator.throttle import ThrottleController
 
 
-def test_initial_batch_size_is_ten() -> None:
+def test_initial_batch_size_is_five() -> None:
     throttle = ThrottleController()
 
-    assert throttle.get_batch_size() == 10
+    assert throttle.get_batch_size() == 5
 
 
 def test_batch_size_increases_after_success() -> None:

@@ -7,11 +7,11 @@ class ThrottleController:
     def __init__(
         self,
         initial_batch_size: int = 5,
-        max_batch_size: int = 50,
-        min_batch_size: int = 10,
-        cooldown_seconds: float = 30,
-        extended_cooldown_seconds: float = 120,
-        extended_cooldown_every: int = 100,
+        max_batch_size: int = 20,
+        min_batch_size: int = 5,
+        cooldown_seconds: float = 60,
+        extended_cooldown_seconds: float = 180,
+        extended_cooldown_every: int = 50,
     ):
         self._min_batch_size = max(1, min_batch_size)
         self._max_batch_size = max(self._min_batch_size, max_batch_size)
