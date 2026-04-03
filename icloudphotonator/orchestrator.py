@@ -43,6 +43,7 @@ class ImportOrchestrator:
 
     MIN_SCAN_BUFFER = 50
     SCAN_PROGRESS_LOG_INTERVAL = 25
+    RESTART_PHOTOS_EVERY = 200
 
     def __init__(
         self,
@@ -75,6 +76,7 @@ class ImportOrchestrator:
         self._network_pause_requested = False
         self._pause_reason: str | None = None
         self._escalation_level = 0
+        self._imports_since_restart = 0
         self.logger = logging.getLogger("icloudphotonator.orchestrator")
 
     async def start_import(self, source_path: Path, job_id: str | None = None):
@@ -682,6 +684,18 @@ class ImportOrchestrator:
             else:
                 consecutive_failed_batches = 0
                 self._escalation_level = 0
+                self._imports_since_restart += batch_stats["imported"]
+
+            # Preventive Photos restart after N successful imports
+            if self._imports_since_restart >= self.RESTART_PHOTOS_EVERY:
+                self._emit_log(
+                    f"🔄 Präventiver Photos-Neustart nach {self._imports_since_restart} Imports..."
+                )
+                await self.restart_photos()
+                self._imports_since_restart = 0
+                self._emit_log("⏳ Warte 60 Sekunden nach Neustart...")
+                await asyncio.sleep(60)
+                self._emit_log("▶️ Weiter geht's!")
 
             if fatal_permission_error:
                 self._emit_log("❌ Die Automation-Berechtigung für Fotos fehlt. Import wird gestoppt.")
@@ -726,6 +740,7 @@ class ImportOrchestrator:
             self._escalation_level = 3
             self.db.log_action(job.job_id, None, "auto_restart", "escalation_level=2, restarting Photos")
             await self.restart_photos()
+            self._imports_since_restart = 0
             return True
         else:
             # Level 3+: manual pause
