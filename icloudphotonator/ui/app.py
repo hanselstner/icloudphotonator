@@ -30,6 +30,17 @@ APP_TITLE = "iCloudPhotonator"
 APP_SUBTITLE = "Foto-Migration für Apple Fotos"
 REPOSITORY_URL = "https://github.com/hanselstner/icloudphototnator"
 ACCENT_BLUE = "#007AFF"
+
+# --- Design System ---
+BG_PRIMARY = ("#f5f5f7", "#1c1c1e")
+BG_CARD = ("#ffffff", "#2c2c2e")
+TEXT_PRIMARY = ("#1c1c1e", "#f5f5f7")
+TEXT_SECONDARY = ("#8e8e93", "#8e8e93")
+BORDER = ("#e5e5ea", "#38383a")
+SUCCESS = "#34C759"
+WARNING = "#FF9500"
+ERROR = "#FF3B30"
+
 DEFAULT_LIBRARY_OPTION = "Standard (Systemmediathek)"
 AUTOMATION_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
 PERMISSION_DIALOG_TITLE = "Berechtigung erforderlich"
@@ -212,14 +223,26 @@ else:
         """A single stat display card with a prominent number and label."""
 
         def __init__(self, master, label: str, **kwargs):
-            super().__init__(master, corner_radius=16, border_width=1, border_color=("#d1d5db", "#374151"), **kwargs)
-            self.value_label = ctk.CTkLabel(self, text="0", font=ctk.CTkFont(size=28, weight="bold"))
-            self.value_label.pack(pady=(12, 2))
-            self.name_label = ctk.CTkLabel(self, text=label, font=ctk.CTkFont(size=12), text_color=("#4b5563", "#9ca3af"))
-            self.name_label.pack(pady=(0, 12))
+            super().__init__(
+                master, corner_radius=10, border_width=1,
+                border_color=BORDER, fg_color=BG_CARD, **kwargs,
+            )
+            self.value_label = ctk.CTkLabel(
+                self, text="0", font=ctk.CTkFont(size=24, weight="bold"),
+            )
+            self.value_label.pack(pady=(14, 2))
+            self.name_label = ctk.CTkLabel(
+                self, text=label, font=ctk.CTkFont(size=11),
+                text_color=TEXT_SECONDARY,
+            )
+            self.name_label.pack(pady=(0, 14))
 
-        def set_value(self, value: int | str) -> None:
+        def set_value(self, value: int | str, highlight_color: str | None = None) -> None:
             self.value_label.configure(text=str(value))
+            if highlight_color:
+                self.value_label.configure(text_color=highlight_color)
+            else:
+                self.value_label.configure(text_color=TEXT_PRIMARY)
 
 
     class LogView(ctk.CTkTextbox):
@@ -252,8 +275,9 @@ else:
             super().__init__()
 
             self.title(APP_TITLE)
-            self.geometry("700x850")
-            self.minsize(600, 700)
+            self.geometry("720x880")
+            self.minsize(640, 720)
+            self.configure(fg_color=BG_PRIMARY)
 
             self._source_path: Path | None = None
             self._is_running = False
@@ -261,7 +285,7 @@ else:
             self._last_stats: dict[str, int] = {}
             self._last_error_count: int = 0
             self._last_job_id: str | None = None
-            self.path_var = tk.StringVar(value="Noch kein Ordner ausgewählt")
+            self.path_var = tk.StringVar(value="No folder selected")
             self.album_var = tk.StringVar(value="")
             self.library_var = tk.StringVar(value=DEFAULT_LIBRARY_OPTION)
             self._library_options: dict[str, Path | None] = {}
@@ -276,8 +300,8 @@ else:
 
             self.protocol("WM_DELETE_WINDOW", self._on_close)
             self._build_ui()
-            self._set_status("⏸ Bereit")
-            self.add_log("Anwendung bereit.")
+            self._set_status("Ready")
+            self.add_log("Application ready.")
             self.after(0, self._run_startup_sequence)
 
         def _run_startup_sequence(self) -> None:
@@ -340,10 +364,10 @@ else:
 
         def _build_ui(self) -> None:
             self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
-            self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+            self.main_frame.pack(fill="both", expand=True, padx=24, pady=20)
             self._build_header()
             self._build_input_section()
-            self._build_status_section()
+            self._build_progress_section()
             self._build_stats_grid()
             self._build_controls()
             self._build_log_area()
@@ -351,65 +375,89 @@ else:
 
         def _build_header(self) -> None:
             header = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-            header.pack(fill="x", pady=(0, 6))
-            icon_frame = ctk.CTkFrame(header, width=40, height=40, corner_radius=12, fg_color=ACCENT_BLUE)
-            icon_frame.pack(side="left", padx=(0, 12))
+            header.pack(fill="x", pady=(0, 16))
+            left = ctk.CTkFrame(header, fg_color="transparent")
+            left.pack(side="left", fill="x", expand=True)
+            icon_row = ctk.CTkFrame(left, fg_color="transparent")
+            icon_row.pack(anchor="w")
+            icon_frame = ctk.CTkFrame(
+                icon_row, width=32, height=32, corner_radius=16, fg_color=ACCENT_BLUE,
+            )
+            icon_frame.pack(side="left", padx=(0, 10))
             icon_frame.pack_propagate(False)
-            ctk.CTkLabel(icon_frame, text="🖼️", font=ctk.CTkFont(size=18)).pack(expand=True)
-            text_frame = ctk.CTkFrame(header, fg_color="transparent")
-            text_frame.pack(side="left", fill="x")
-            ctk.CTkLabel(text_frame, text=APP_TITLE, font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w")
-            ctk.CTkLabel(text_frame, text=APP_SUBTITLE, font=ctk.CTkFont(size=11), text_color=("#4b5563", "#9ca3af")).pack(anchor="w")
+            ctk.CTkLabel(icon_frame, text="📸", font=ctk.CTkFont(size=14)).pack(expand=True)
+            ctk.CTkLabel(
+                icon_row, text=APP_TITLE, font=ctk.CTkFont(size=18, weight="bold"),
+            ).pack(side="left")
+            ctk.CTkLabel(
+                icon_row, text="v0.3.0", font=ctk.CTkFont(size=11),
+                text_color=TEXT_SECONDARY,
+            ).pack(side="left", padx=(8, 0))
+            self.settings_btn = ctk.CTkButton(
+                header, text="⚙️", width=32, height=32, corner_radius=8,
+                fg_color="transparent", hover_color=BORDER, command=None,
+            )
+            self.settings_btn.pack(side="right")
 
         def _build_input_section(self) -> None:
             """Build the combined input section: source folder, album, library."""
-            frame = ctk.CTkFrame(self.main_frame)
-            frame.pack(fill="x", pady=(0, 10))
-            inner = ctk.CTkFrame(frame, fg_color="transparent")
-            inner.pack(fill="x", padx=14, pady=12)
+            card = ctk.CTkFrame(
+                self.main_frame, corner_radius=12, fg_color=BG_CARD,
+                border_width=1, border_color=BORDER,
+            )
+            card.pack(fill="x", pady=(0, 16))
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=16, pady=14)
 
-            ctk.CTkLabel(inner, text="Quellordner", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+            # Source Folder row
             row1 = ctk.CTkFrame(inner, fg_color="transparent")
-            row1.pack(fill="x", pady=(4, 8))
+            row1.pack(fill="x", pady=(0, 10))
+            ctk.CTkLabel(
+                row1, text="Source Folder", font=ctk.CTkFont(size=13, weight="bold"),
+                width=110, anchor="w",
+            ).pack(side="left")
             self.path_entry = ctk.CTkEntry(row1, textvariable=self.path_var, state="disabled")
             self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
             self.browse_btn = ctk.CTkButton(
-                row1,
-                text="Ordner wählen…",
-                width=130,
-                fg_color=ACCENT_BLUE,
-                hover_color="#0062cc",
+                row1, text="Browse", width=80, height=28, corner_radius=8,
+                fg_color="transparent", border_width=1, border_color=ACCENT_BLUE,
+                text_color=ACCENT_BLUE, hover_color=("#e8f0fe", "#1a3a5c"),
                 command=self._browse_folder,
             )
             self.browse_btn.pack(side="right")
 
-            ctk.CTkLabel(inner, text="Import-Album", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+            # Import Album row
             row2 = ctk.CTkFrame(inner, fg_color="transparent")
-            row2.pack(fill="x", pady=(4, 8))
+            row2.pack(fill="x", pady=(0, 10))
+            ctk.CTkLabel(
+                row2, text="Import Album", font=ctk.CTkFont(size=13, weight="bold"),
+                width=110, anchor="w",
+            ).pack(side="left")
             self.album_entry = ctk.CTkEntry(
-                row2,
-                textvariable=self.album_var,
-                placeholder_text="Album-Name (leer = kein Album)",
+                row2, textvariable=self.album_var,
+                placeholder_text="Album name (empty = no album)",
             )
             self.album_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
             self.album_auto_btn = ctk.CTkButton(
-                row2,
-                text="↻ Auto",
-                width=70,
-                fg_color="#6c757d",
-                hover_color="#5a6268",
+                row2, text="Auto", width=60, height=28, corner_radius=8,
+                fg_color="transparent", border_width=1, border_color=TEXT_SECONDARY,
+                text_color=TEXT_SECONDARY, hover_color=("#e8e8ed", "#3a3a3c"),
                 command=self._auto_fill_album,
             )
             self.album_auto_btn.pack(side="right")
 
-            ctk.CTkLabel(inner, text="Ziel-Mediathek", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+            # Target Library row
+            row3 = ctk.CTkFrame(inner, fg_color="transparent")
+            row3.pack(fill="x")
+            ctk.CTkLabel(
+                row3, text="Target Library", font=ctk.CTkFont(size=13, weight="bold"),
+                width=110, anchor="w",
+            ).pack(side="left")
             self.library_combo = ctk.CTkComboBox(
-                inner,
-                variable=self.library_var,
-                values=[DEFAULT_LIBRARY_OPTION],
-                state="readonly",
+                row3, variable=self.library_var,
+                values=[DEFAULT_LIBRARY_OPTION], state="readonly",
             )
-            self.library_combo.pack(fill="x", pady=(4, 0))
+            self.library_combo.pack(side="left", fill="x", expand=True)
             self._refresh_library_options()
 
         def _refresh_library_options(self) -> None:
@@ -423,54 +471,98 @@ else:
         def _get_selected_library(self) -> Path | None:
             return self._library_options.get(self.library_var.get())
 
-        def _build_status_section(self) -> None:
-            frame = ctk.CTkFrame(self.main_frame)
-            frame.pack(fill="x", pady=(0, 8))
-            inner = ctk.CTkFrame(frame, fg_color="transparent")
-            inner.pack(fill="x", padx=16, pady=14)
-            self.status_label = ctk.CTkLabel(inner, text="", font=ctk.CTkFont(size=15, weight="bold"))
-            self.status_label.pack(anchor="w")
-            self.progress_bar = ctk.CTkProgressBar(inner, mode="determinate")
-            self.progress_bar.pack(fill="x", pady=(10, 0))
+        def _build_progress_section(self) -> None:
+            frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+            frame.pack(fill="x", pady=(0, 16))
+            self.percent_label = ctk.CTkLabel(
+                frame, text="0%", font=ctk.CTkFont(size=48, weight="bold"),
+            )
+            self.percent_label.pack()
+            self.status_label = ctk.CTkLabel(
+                frame, text="", font=ctk.CTkFont(size=13), text_color=TEXT_SECONDARY,
+            )
+            self.status_label.pack(pady=(2, 8))
+            self.progress_bar = ctk.CTkProgressBar(
+                frame, height=4, corner_radius=2, mode="determinate",
+            )
+            self.progress_bar.pack(fill="x")
             self.progress_bar.set(0)
 
         def _build_stats_grid(self) -> None:
             frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-            frame.pack(fill="x", pady=(0, 8))
+            frame.pack(fill="x", pady=(0, 16))
             frame.grid_columnconfigure((0, 1, 2), weight=1)
-            labels = ["Entdeckt", "Importiert", "Gestaged", "Duplikate", "Fehler", "Verbleibend"]
+            labels = ["Discovered", "Imported", "Staged", "Duplicates", "Errors", "Remaining"]
             self.stat_cards: dict[str, StatsCard] = {}
             for index, label in enumerate(labels):
-                key = label.lower().replace("ü", "ue")
+                key = label.lower()
                 card = StatsCard(frame, label)
                 card.grid(row=index // 3, column=index % 3, padx=4, pady=4, sticky="ew")
                 self.stat_cards[key] = card
 
         def _build_controls(self) -> None:
-            frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-            frame.pack(fill="x", pady=(0, 6))
-            self.start_btn = ctk.CTkButton(frame, text="▶ Start", fg_color="#28a745", hover_color="#218838", command=self._on_start, state="disabled")
-            self.start_btn.pack(side="left", padx=(0, 6), expand=True, fill="x")
-            self.pause_btn = ctk.CTkButton(frame, text="⏸ Pause", fg_color="#ffc107", hover_color="#e0a800", text_color="black", command=self._on_pause, state="disabled")
-            self.pause_btn.pack(side="left", padx=6, expand=True, fill="x")
-            self.stop_btn = ctk.CTkButton(frame, text="⏹ Stop", fg_color="#dc3545", hover_color="#c82333", command=self._on_stop, state="disabled")
-            self.stop_btn.pack(side="left", padx=6, expand=True, fill="x")
-            self.retry_btn = ctk.CTkButton(frame, text="🔄 Retry Fehler", fg_color="#6f42c1", hover_color="#5a32a3", command=self._on_retry_errors, state="disabled")
-            self.retry_btn.pack(side="left", padx=(6, 0), expand=True, fill="x")
-            self.restart_photos_btn = ctk.CTkButton(frame, text="🔄 Photos neu starten & fortfahren", fg_color="#17a2b8", hover_color="#138496", command=self._on_restart_photos)
-            self.restart_photos_btn.pack(side="left", padx=(6, 0), expand=True, fill="x")
-            self.restart_photos_btn.pack_forget()
+            # Restart Photos banner (hidden by default, shown above controls when needed)
+            self.restart_photos_btn = ctk.CTkButton(
+                self.main_frame, text="Restart Photos & Continue",
+                height=36, corner_radius=8,
+                fg_color=WARNING, hover_color="#E68600", text_color="#ffffff",
+                command=self._on_restart_photos,
+            )
+            # Don't pack yet — shown via _handle_progress when needed
+            ctrl_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+            ctrl_frame.pack(fill="x", pady=(0, 16))
+            ctrl_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+            self._controls_frame = ctrl_frame
+
+            self.start_btn = ctk.CTkButton(
+                ctrl_frame, text="Start", height=36, corner_radius=8,
+                fg_color=SUCCESS, hover_color="#2DB84E",
+                command=self._on_start, state="disabled",
+            )
+            self.start_btn.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+            self.pause_btn = ctk.CTkButton(
+                ctrl_frame, text="Pause", height=36, corner_radius=8,
+                fg_color="transparent", border_width=1, border_color=WARNING,
+                text_color=WARNING, hover_color=("#fff3e0", "#3a3020"),
+                command=self._on_pause, state="disabled",
+            )
+            self.pause_btn.grid(row=0, column=1, padx=4, sticky="ew")
+            self.stop_btn = ctk.CTkButton(
+                ctrl_frame, text="Stop", height=36, corner_radius=8,
+                fg_color="transparent", border_width=1, border_color=ERROR,
+                text_color=ERROR, hover_color=("#ffe8e6", "#3a2020"),
+                command=self._on_stop, state="disabled",
+            )
+            self.stop_btn.grid(row=0, column=2, padx=4, sticky="ew")
+            self.retry_btn = ctk.CTkButton(
+                ctrl_frame, text="Retry", height=36, corner_radius=8,
+                fg_color="transparent", border_width=1, border_color=ACCENT_BLUE,
+                text_color=ACCENT_BLUE, hover_color=("#e8f0fe", "#1a3a5c"),
+                command=self._on_retry_errors, state="disabled",
+            )
+            self.retry_btn.grid(row=0, column=3, padx=(4, 0), sticky="ew")
 
         def _build_log_area(self) -> None:
-            ctk.CTkLabel(self.main_frame, text="Log", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(0, 6))
-            self.log_view = LogView(self.main_frame, height=150)
+            header = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+            header.pack(fill="x", pady=(0, 6))
+            ctk.CTkLabel(
+                header, text="Activity Log", font=ctk.CTkFont(size=14, weight="bold"),
+            ).pack(side="left")
+            self.log_view = LogView(self.main_frame, height=120, corner_radius=8)
             self.log_view.pack(fill="both", expand=True)
 
         def _build_footer(self) -> None:
             footer = ctk.CTkFrame(self.main_frame, fg_color="transparent")
             footer.pack(fill="x", pady=(8, 0))
-            ctk.CTkLabel(footer, text="iCloudPhotonator v0.1.0", font=ctk.CTkFont(size=11), text_color=("#6b7280", "#9ca3af")).pack(side="left")
-            ctk.CTkButton(footer, text="Projektseite öffnen", font=ctk.CTkFont(size=11, underline=True), fg_color="transparent", hover=False, text_color=ACCENT_BLUE, width=20, command=lambda: webbrowser.open(REPOSITORY_URL)).pack(side="right")
+            ctk.CTkLabel(
+                footer, text="v0.3.0", font=ctk.CTkFont(size=10),
+                text_color=TEXT_SECONDARY,
+            ).pack(side="left")
+            ctk.CTkButton(
+                footer, text="GitHub", font=ctk.CTkFont(size=11, underline=True),
+                fg_color="transparent", hover=False, text_color=ACCENT_BLUE,
+                width=20, command=lambda: webbrowser.open(REPOSITORY_URL),
+            ).pack(side="right")
 
         def _browse_folder(self) -> None:
             path = filedialog.askdirectory(title="Quellordner auswählen")
@@ -535,14 +627,14 @@ else:
             self._is_paused = False
             self._last_error_count = 0
             self.start_btn.configure(state="disabled")
-            self.pause_btn.configure(state="normal", text="⏸ Pause")
+            self.pause_btn.configure(state="normal", text="Pause")
             self.stop_btn.configure(state="normal")
             self.retry_btn.configure(state="disabled")
             self.browse_btn.configure(state="disabled")
             self.album_entry.configure(state="disabled")
             self.album_auto_btn.configure(state="disabled")
             self.library_combo.configure(state="disabled")
-            self._set_status("🔄 Scanne...", indeterminate=True)
+            self._set_status("Scanning...", indeterminate=True)
             if job_id:
                 self._last_job_id = job_id
                 self.add_log("Import wird fortgesetzt...")
@@ -562,14 +654,14 @@ else:
                 return
             if self._is_paused:
                 self._is_paused = False
-                self.pause_btn.configure(text="⏸ Pause")
-                self._set_status("🔄 Importiere...")
+                self.pause_btn.configure(text="Pause")
+                self._set_status("Importing...")
                 self._bridge.resume()
                 self.add_log("Import fortgesetzt.")
                 return
             self._is_paused = True
-            self.pause_btn.configure(text="▶ Fortsetzen")
-            self._set_status("⏸ Pausiert")
+            self.pause_btn.configure(text="Resume")
+            self._set_status("Paused")
             self._bridge.pause()
             self.add_log("Import pausiert.")
 
@@ -598,21 +690,21 @@ else:
             self._is_paused = False
             self._last_error_count = 0
             self.start_btn.configure(state="disabled")
-            self.pause_btn.configure(state="normal", text="⏸ Pause")
+            self.pause_btn.configure(state="normal", text="Pause")
             self.stop_btn.configure(state="normal")
             self.retry_btn.configure(state="disabled")
             self.browse_btn.configure(state="disabled")
             self.album_entry.configure(state="disabled")
             self.album_auto_btn.configure(state="disabled")
             self.library_combo.configure(state="disabled")
-            self._set_status("🔄 Importiere...", indeterminate=True)
+            self._set_status("Importing...", indeterminate=True)
             self._bridge.retry_errors(self._last_job_id)
 
         def _on_restart_photos(self) -> None:
             self.restart_photos_btn.pack_forget()
             self._is_paused = False
-            self.pause_btn.configure(text="⏸ Pause")
-            self._set_status("🔄 Photos wird neu gestartet...")
+            self.pause_btn.configure(text="Pause")
+            self._set_status("Restarting Photos...")
             self.add_log("Photos.app wird neu gestartet...")
             self._bridge.restart_photos()
 
@@ -623,7 +715,7 @@ else:
                     self._last_job_id = payload["job_id"]
                 pause_reason = payload.get("pause_reason")
                 if pause_reason == "photos_unresponsive":
-                    self.after(0, lambda: self.restart_photos_btn.pack(side="left", padx=(6, 0), expand=True, fill="x"))
+                    self.after(0, lambda: self.restart_photos_btn.pack(fill="x", pady=(0, 8), before=self._controls_frame))
                 elif pause_reason is None:
                     self.after(0, self.restart_photos_btn.pack_forget)
                 self.update_stats(payload)
@@ -651,7 +743,7 @@ else:
             self._is_running = False
             self._is_paused = False
             self.start_btn.configure(state="normal" if self._source_path else "disabled")
-            self.pause_btn.configure(state="disabled", text="⏸ Pause")
+            self.pause_btn.configure(state="disabled", text="Pause")
             self.stop_btn.configure(state="disabled")
             self.retry_btn.configure(state="normal" if self._last_error_count > 0 else "disabled")
             self.restart_photos_btn.pack_forget()
@@ -662,6 +754,7 @@ else:
             self._set_status(status_text)
             if completed:
                 self.progress_bar.set(1)
+                self.percent_label.configure(text="100%")
             self.add_log(log_message)
 
         def _set_path_display(self, text: str) -> None:
@@ -685,30 +778,47 @@ else:
                 staged_current = self._last_stats.get("staged", 0)
                 staged_total = self._last_stats.get("staged_total", 0)
                 values = {
-                    "entdeckt": self._last_stats.get("discovered", self._last_stats.get("total", 0)),
-                    "importiert": self._last_stats.get("imported", 0),
-                    "gestaged": f"{staged_current} (∑ {staged_total:,})".replace(",", ".") if staged_total > 0 else str(staged_current),
-                    "duplikate": self._last_stats.get("duplicates", 0),
-                    "fehler": self._last_stats.get("errors", 0),
+                    "discovered": self._last_stats.get("discovered", self._last_stats.get("total", 0)),
+                    "imported": self._last_stats.get("imported", 0),
+                    "staged": f"{staged_current} (∑ {staged_total:,})".replace(",", ".") if staged_total > 0 else str(staged_current),
+                    "duplicates": self._last_stats.get("duplicates", 0),
+                    "errors": self._last_stats.get("errors", 0),
                 }
-                values["verbleibend"] = self._last_stats.get(
+                values["remaining"] = self._last_stats.get(
                     "remaining",
-                    max(int(values["entdeckt"]) - (int(values["importiert"]) + int(values["duplikate"]) + int(values["fehler"])), 0),
+                    max(int(values["discovered"]) - (int(values["imported"]) + int(values["duplicates"]) + int(values["errors"])), 0),
                 )
-                done = max(int(values["entdeckt"]) - int(values["verbleibend"]), 0)
-                for key, value in values.items():
-                    self.stat_cards[key].set_value(value)
-                total = values["entdeckt"]
-                if state == "scanning":
-                    self._set_status("🔄 Scanne...", indeterminate=True)
-                elif state == "deduplicating":
-                    self._set_status("🔄 Prüfe Duplikate...")
-                elif state == "staging":
-                    self._set_status("🔄 Stage Dateien...")
-                elif self._is_running and not self._is_paused and total > 0:
-                    self._set_status("🔄 Importiere...")
+                done = max(int(values["discovered"]) - int(values["remaining"]), 0)
+                total = values["discovered"]
 
-                if total > 0 and state != "scanning":
+                # Update stat cards with error highlighting
+                for key, value in values.items():
+                    if key == "errors" and int(values["errors"]) > 0:
+                        self.stat_cards[key].set_value(value, highlight_color=ERROR)
+                    else:
+                        self.stat_cards[key].set_value(value)
+
+                # Update percentage display
+                if isinstance(total, int) and total > 0:
+                    pct = min(int(done / total * 100), 100)
+                    self.percent_label.configure(text=f"{pct}%")
+
+                # Update status text
+                if state == "scanning":
+                    self._set_status("Scanning...", indeterminate=True)
+                elif state == "deduplicating":
+                    self._set_status("Checking duplicates...")
+                elif state == "staging":
+                    self._set_status("Staging files...")
+                elif self._is_running and not self._is_paused and isinstance(total, int) and total > 0:
+                    imported_count = int(values["imported"])
+                    self.status_label.configure(
+                        text=f"Importing... {imported_count:,} of {total:,}",
+                    )
+                    self.progress_bar.stop()
+                    self.progress_bar.configure(mode="determinate")
+
+                if isinstance(total, int) and total > 0 and state != "scanning":
                     self.progress_bar.set(min(done / total, 1))
 
             self.after(0, _update)
