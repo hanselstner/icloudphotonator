@@ -78,36 +78,46 @@ def test_onboarding_done_round_trip_uses_config_file(tmp_path, monkeypatch) -> N
     assert json.loads(config_path.read_text(encoding="utf-8")) == {"onboarding_done": True}
 
 
-def test_show_onboarding_uses_german_dialog_and_marks_completion(monkeypatch) -> None:
+def test_show_onboarding_first_run_opens_dialog(monkeypatch) -> None:
+    """On first run, _show_onboarding creates an OnboardingDialog and waits for it."""
     load_locale("de")
-    captured: dict[str, object] = {}
-    logs: list[str] = []
-    marks: list[str] = []
+    dialog_instances: list[object] = []
 
-    class FakeMessageBox:
-        @staticmethod
-        def showinfo(title, message):
-            captured["title"] = title
-            captured["message"] = message
-            return "ok"
+    class FakeOnboardingDialog:
+        def __init__(self, master, on_complete=None):
+            dialog_instances.append(self)
+
+    class DummyApp:
+        def add_log(self, message: str) -> None:
+            pass
+
+        def wait_window(self, dialog) -> None:
+            pass
+
+    monkeypatch.setattr(app, "_check_onboarding_done", lambda: False)
+    monkeypatch.setattr(app, "OnboardingDialog", FakeOnboardingDialog)
+
+    app.ICloudPhotonatorApp._show_onboarding(DummyApp())
+
+    assert len(dialog_instances) == 1
+
+
+def test_show_onboarding_subsequent_run_checks_permission(monkeypatch) -> None:
+    """On subsequent runs, _show_onboarding checks automation permission directly."""
+    load_locale("de")
+    logs: list[str] = []
 
     class DummyApp:
         def add_log(self, message: str) -> None:
             logs.append(message)
 
-    monkeypatch.setattr(app, "messagebox", FakeMessageBox)
-    monkeypatch.setattr(app, "_check_onboarding_done", lambda: False)
+    monkeypatch.setattr(app, "_check_onboarding_done", lambda: True)
     monkeypatch.setattr(app, "_check_automation_permission", lambda: True)
-    monkeypatch.setattr(app, "_mark_onboarding_done", lambda: marks.append("done"))
 
     app.ICloudPhotonatorApp._show_onboarding(DummyApp())
 
-    assert captured["title"] == "Willkommen bei iCloudPhotonator"
-    assert "Automation (Fotos-App)" in captured["message"]
-    assert "Fotomediathek" in captured["message"]
-    assert "Bitte bestätigen Sie jeweils mit „OK“." in captured["message"]
     assert logs == ["Prüfe Automation-Berechtigung...", "✅ Automation-Berechtigung erteilt."]
-    assert marks == ["done"]
+
 
 
 def test_run_startup_sequence_runs_onboarding_before_resume_check() -> None:

@@ -18,14 +18,12 @@
   "app.default_library": "Default (System Library)",
   "app.ready": "Ready",
   "app.application_ready": "Application ready.",
-
   "stats.discovered": "Discovered",
   "stats.imported": "Imported",
   "stats.staged": "Staged",
   "stats.duplicates": "Duplicates",
   "stats.errors": "Errors",
   "stats.remaining": "Remaining",
-
   "progress.importing": "Importing... {imported} of {total}",
   "progress.scanning": "Scanning...",
   "progress.deduplicating": "Checking duplicates...",
@@ -36,7 +34,6 @@
   "progress.complete": "✅ Done",
   "progress.error": "⚠️ Error",
   "progress.permission_required": "⚠️ Permission required",
-
   "log.source_folder_chosen": "Source folder chosen: {path}",
   "log.import_started": "Import started...",
   "log.import_resumed": "Import is being resumed...",
@@ -58,7 +55,6 @@
   "log.saved_import_not_found": "The saved import could not be found.",
   "log.resetting_error_files": "Resetting {count} error files...",
   "log.orchestrator_not_available": "ImportOrchestrator.start_import() is not available.",
-
   "log.scanning_source": "Scanning source: {path}",
   "log.scanning_progress": "Scanning... {count} files found.",
   "log.scan_complete": "Scan complete: {count} files found.",
@@ -80,7 +76,6 @@
   "log.import_cancelled": "Import stopped.",
   "log.network_lost": "Network connection lost, pausing import",
   "log.network_restored": "Network connection restored, resuming import",
-
   "log.photos_quit": "🔄 Quitting Photos.app (graceful)...",
   "log.photos_quit_done": "✅ Photos.app quit.",
   "log.photos_waiting": "⏳ Waiting for Photos.app... ({seconds}s)",
@@ -91,7 +86,6 @@
   "log.preventive_restart": "🔄 Preventive Photos restart after {count} imports...",
   "log.preventive_wait": "⏳ Waiting 120 seconds after restart...",
   "log.continue": "▶️ Let's continue!",
-
   "log.network_skip_batch": "⏸️ Network not available — batch will be skipped.",
   "log.staging_done": "Staging complete. Import starting.",
   "log.staging_prepared": "Staging prepared.",
@@ -104,13 +98,11 @@
   "log.auto_pause": "⏸️ Photos is having issues. Pausing {duration}...",
   "log.auto_pause_remaining": "⏸️ {seconds}s remaining...",
   "log.auto_resume": "▶️ Trying again...",
-
   "log.checking_automation": "Checking Automation permission...",
   "log.automation_granted": "✅ Automation permission granted.",
   "log.automation_not_granted": "⚠️ Automation permission not granted.",
   "log.automation_declined": "⚠️ Automation permission declined — functionality limited.",
   "log.grant_permission": "Please grant the permission in System Settings.\n\nClick OK when you are done.",
-
   "dialog.resume_title": "iCloudPhotonator",
   "dialog.resume_message": "Incomplete import found:\n{path}\n\nProgress: {imported}/{total} files imported.\n\nWould you like to resume the import?",
   "dialog.retry_message": "{count} files with errors found.\n\nWould you like to reimport these files?",
@@ -128,10 +120,28 @@
   "dialog.browse_title": "Select source folder",
   "dialog.grant_permission_title": "Grant Permission",
   "dialog.grant_permission_message": "Please grant the permission in System Settings.\n\nClick OK when you are done.",
-
   "onboarding.title": "Welcome to iCloudPhotonator",
   "onboarding.message": "To import your photos, iCloudPhotonator needs the following permissions:\n\n1️⃣  Automation (Photos App)\n     Allows the app to import photos into the Photos app.\n\n2️⃣  Photo Library\n     Allows the app to access your photo library.\n\nmacOS will ask you for these permissions now.\nPlease confirm each with \"OK\".",
-
+  "onboarding.welcome_title": "Welcome to iCloudPhotonator",
+  "onboarding.welcome_desc": "Easily import your photo and video collections into Apple Photos. iCloudPhotonator handles large libraries with smart batching, duplicate detection, and automatic recovery.",
+  "onboarding.permissions_title": "Permissions Required",
+  "onboarding.permissions_desc": "iCloudPhotonator needs permission to control Photos.app in order to import your media files.",
+  "onboarding.permission_granted": "✅ Permission granted",
+  "onboarding.permission_not_granted": "Permission not yet granted",
+  "onboarding.open_settings": "Open System Settings",
+  "onboarding.check_again": "Check Again",
+  "onboarding.ready_title": "You're All Set!",
+  "onboarding.ready_desc": "Select a source folder and start importing your photos and videos into Apple Photos.",
+  "onboarding.next": "Next",
+  "onboarding.back": "Back",
+  "onboarding.get_started": "Get Started",
+  "onboarding.step_indicator": "Step {current} of {total}",
+  "error.no_media_files": "No media files found in this folder.",
+  "error.source_not_accessible": "Source folder is not accessible. Please check the path and try again.",
+  "error.photos_not_installed": "Photos.app is required but could not be found on this system.",
+  "error.check_network": "Check your network connection and try again.",
+  "error.photos_not_responding_friendly": "Photos.app is not responding. The app will try to recover automatically.",
+  "error.permission_hint": "Please open System Settings → Privacy & Security → Automation and grant iCloudPhotonator access to Photos.",
   "error.file_too_large": "File too large for staging ({size_mb} MB > {max_mb} MB limit)",
   "error.corrupt_file": "Corrupt file: {message}",
   "error.staging_failed": "Staging failed: Network file was not copied locally",
@@ -139,7 +149,6 @@
   "error.photos_not_responding": "Photos.app is not responding",
   "error.import_failed": "Import failed: {name}",
   "error.stuck_interrupted": "Import was interrupted by app restart",
-
   "settings.title": "Settings",
   "settings.intro": "These are recommended defaults that work well for most systems. If Photos.app becomes unstable, reduce batch sizes and increase cooldowns. If your system handles imports well, you can carefully increase speeds.",
   "settings.performance": "Import Performance",
@@ -162,4 +171,3 @@
   "settings.imports": "imports",
   "settings.gb": "GB"
 }
-

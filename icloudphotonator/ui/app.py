@@ -31,6 +31,25 @@ from .bridge import BackendBridge
 APP_TITLE = "iCloudPhotonator"
 REPOSITORY_URL = "https://github.com/hanselstner/icloudphototnator"
 ACCENT_BLUE = "#007AFF"
+DEFAULT_ALBUM_NAME = "iCloudPhotonator Import"
+
+
+def _get_version() -> str:
+    """Read version from pyproject.toml, fall back to 0.3.0."""
+    try:
+        toml_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        if toml_path.exists():
+            for line in toml_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("version"):
+                    # version = "0.3.0"
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return "0.3.0"
+
+
+APP_VERSION = _get_version()
 
 # --- Design System ---
 BG_PRIMARY = ("#f5f5f7", "#1c1c1e")
@@ -48,6 +67,40 @@ PERMISSION_DIALOG_TITLE = "dialog.permission_title"  # i18n key
 PERMISSION_DIALOG_TEXT = "dialog.permission_message"  # i18n key
 ONBOARDING_DIALOG_TITLE = "onboarding.title"  # i18n key
 ONBOARDING_DIALOG_TEXT = "onboarding.message"  # i18n key
+
+
+def _center_window(window, width: int, height: int, parent=None) -> None:
+    """Center *window* on screen, or over *parent* if given."""
+    window.update_idletasks()
+    if parent is not None:
+        px = parent.winfo_x() + (parent.winfo_width() - width) // 2
+        py = parent.winfo_y() + (parent.winfo_height() - height) // 2
+    else:
+        px = (window.winfo_screenwidth() - width) // 2
+        py = (window.winfo_screenheight() - height) // 2
+    window.geometry(f"{width}x{height}+{max(px, 0)}+{max(py, 0)}")
+
+
+def _check_photos_installed() -> bool:
+    """Return True if Photos.app exists on the system."""
+    return Path("/Applications/Photos.app").exists() or Path("/System/Applications/Photos.app").exists()
+
+
+MEDIA_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".heic", ".heif", ".tiff", ".tif", ".bmp", ".gif", ".webp",
+    ".mov", ".mp4", ".m4v", ".avi", ".mkv", ".3gp", ".mts",
+}
+
+
+def _has_media_files(folder: Path) -> bool:
+    """Return True if *folder* contains at least one media file."""
+    try:
+        for entry in folder.iterdir():
+            if entry.is_file() and entry.suffix.lower() in MEDIA_EXTENSIONS:
+                return True
+    except OSError:
+        pass
+    return False
 
 
 def build_library_options(libraries: list[Path]) -> dict[str, Path | None]:
@@ -146,32 +199,13 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
 
         def _show_onboarding(self) -> None:
             if not _check_onboarding_done():
-                messagebox.showinfo(t(ONBOARDING_DIALOG_TITLE), t(ONBOARDING_DIALOG_TEXT))
                 _mark_onboarding_done()
 
-            while True:
-                self.add_log(t("log.checking_automation"))
-                if _check_automation_permission():
-                    self.add_log(t("log.automation_granted"))
-                    break
-
+            self.add_log(t("log.checking_automation"))
+            if _check_automation_permission():
+                self.add_log(t("log.automation_granted"))
+            else:
                 self.add_log(t("log.automation_not_granted"))
-                open_prefs = messagebox.askyesno(
-                    t("dialog.permission_missing_title"),
-                    t("dialog.permission_missing_message"),
-                    icon="warning",
-                )
-                if not open_prefs:
-                    self.add_log(t("log.automation_declined"))
-                    break
-
-                subprocess.Popen(
-                    ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
-                )
-                messagebox.showinfo(
-                    t("dialog.grant_permission_title"),
-                    t("dialog.grant_permission_message"),
-                )
 
         def _ensure_source_access_if_needed(self) -> None:
             """If the last incomplete job's source folder is inaccessible, prompt the user."""
@@ -211,7 +245,6 @@ else:
         def __init__(self, master, settings: ImportSettings, on_save: "Callable[[ImportSettings], None] | None" = None):
             super().__init__(master)
             self.title(t("settings.title"))
-            self.geometry("480x600")
             self.resizable(False, False)
             self.grab_set()
             self.configure(fg_color=BG_PRIMARY)
@@ -219,6 +252,7 @@ else:
             self._on_save = on_save
             self._vars: dict[str, tk.Variable] = {}
             self._build_ui()
+            _center_window(self, 480, 600, parent=master)
 
         def _build_ui(self) -> None:
             container = ctk.CTkScrollableFrame(self, fg_color="transparent")
@@ -336,6 +370,180 @@ else:
             self.destroy()
 
 
+
+    class OnboardingDialog(ctk.CTkToplevel):
+        """Step-by-step onboarding wizard shown on first launch."""
+
+        _TOTAL_STEPS = 3
+
+        def __init__(self, master, on_complete: "Callable[[], None] | None" = None):
+            super().__init__(master)
+            self.title(APP_TITLE)
+            self.resizable(False, False)
+            self.grab_set()
+            self.configure(fg_color=BG_PRIMARY)
+            self._on_complete = on_complete
+            self._step = 0
+            self._permission_granted = _check_automation_permission()
+            self._build_ui()
+            self._show_step(0)
+            _center_window(self, 520, 480, parent=master)
+            self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        def _build_ui(self) -> None:
+            # Step indicator at top
+            self._indicator_frame = ctk.CTkFrame(self, fg_color="transparent")
+            self._indicator_frame.pack(fill="x", padx=24, pady=(20, 0))
+            self._dots: list[ctk.CTkLabel] = []
+            dot_row = ctk.CTkFrame(self._indicator_frame, fg_color="transparent")
+            dot_row.pack()
+            for i in range(self._TOTAL_STEPS):
+                dot = ctk.CTkLabel(dot_row, text="●", font=ctk.CTkFont(size=14),
+                                   text_color=ACCENT_BLUE if i == 0 else TEXT_SECONDARY)
+                dot.pack(side="left", padx=6)
+                self._dots.append(dot)
+
+            # Content area
+            self._content = ctk.CTkFrame(self, fg_color="transparent")
+            self._content.pack(fill="both", expand=True, padx=32, pady=16)
+
+            # Navigation buttons
+            nav = ctk.CTkFrame(self, fg_color="transparent")
+            nav.pack(fill="x", padx=32, pady=(0, 24))
+            self._back_btn = ctk.CTkButton(
+                nav, text=t("onboarding.back"), width=100, height=36, corner_radius=8,
+                fg_color="transparent", border_width=1, border_color=BORDER,
+                text_color=TEXT_PRIMARY, hover_color=("#e8e8ed", "#3a3a3c"),
+                command=self._go_back,
+            )
+            self._back_btn.pack(side="left")
+            self._next_btn = ctk.CTkButton(
+                nav, text=t("onboarding.next"), width=100, height=36, corner_radius=8,
+                fg_color=ACCENT_BLUE, hover_color="#005EC4",
+                command=self._go_next,
+            )
+            self._next_btn.pack(side="right")
+
+        def _show_step(self, step: int) -> None:
+            self._step = step
+            # Update dots
+            for i, dot in enumerate(self._dots):
+                dot.configure(text_color=ACCENT_BLUE if i <= step else TEXT_SECONDARY)
+            # Clear content
+            for w in self._content.winfo_children():
+                w.destroy()
+            # Update nav
+            self._back_btn.configure(state="normal" if step > 0 else "disabled")
+            if step == self._TOTAL_STEPS - 1:
+                self._next_btn.configure(text=t("onboarding.get_started"))
+            else:
+                self._next_btn.configure(text=t("onboarding.next"))
+
+            if step == 0:
+                self._build_welcome()
+            elif step == 1:
+                self._build_permissions()
+            elif step == 2:
+                self._build_ready()
+
+        def _build_welcome(self) -> None:
+            ctk.CTkLabel(
+                self._content, text="📸", font=ctk.CTkFont(size=48),
+            ).pack(pady=(24, 12))
+            ctk.CTkLabel(
+                self._content, text=t("onboarding.welcome_title"),
+                font=ctk.CTkFont(size=22, weight="bold"),
+            ).pack(pady=(0, 8))
+            ctk.CTkLabel(
+                self._content, text=t("onboarding.welcome_desc"),
+                font=ctk.CTkFont(size=13), text_color=TEXT_SECONDARY,
+                wraplength=440, justify="center",
+            ).pack(pady=(0, 16))
+
+        def _build_permissions(self) -> None:
+            ctk.CTkLabel(
+                self._content, text=t("onboarding.permissions_title"),
+                font=ctk.CTkFont(size=20, weight="bold"),
+            ).pack(pady=(24, 8))
+            ctk.CTkLabel(
+                self._content, text=t("onboarding.permissions_desc"),
+                font=ctk.CTkFont(size=13), text_color=TEXT_SECONDARY,
+                wraplength=440, justify="center",
+            ).pack(pady=(0, 20))
+
+            # Permission status
+            status_frame = ctk.CTkFrame(self._content, corner_radius=10,
+                                        border_width=1, border_color=BORDER, fg_color=BG_CARD)
+            status_frame.pack(fill="x", pady=(0, 16))
+            inner = ctk.CTkFrame(status_frame, fg_color="transparent")
+            inner.pack(fill="x", padx=16, pady=12)
+
+            self._perm_label = ctk.CTkLabel(
+                inner,
+                text=t("onboarding.permission_granted") if self._permission_granted else t("onboarding.permission_not_granted"),
+                font=ctk.CTkFont(size=13),
+                text_color=SUCCESS if self._permission_granted else WARNING,
+            )
+            self._perm_label.pack(anchor="w")
+
+            if not self._permission_granted:
+                btn_row = ctk.CTkFrame(self._content, fg_color="transparent")
+                btn_row.pack(pady=(0, 8))
+                ctk.CTkButton(
+                    btn_row, text=t("onboarding.open_settings"), width=180, height=32,
+                    corner_radius=8, fg_color=ACCENT_BLUE, hover_color="#005EC4",
+                    command=self._open_settings,
+                ).pack(side="left", padx=(0, 8))
+                ctk.CTkButton(
+                    btn_row, text=t("onboarding.check_again"), width=140, height=32,
+                    corner_radius=8, fg_color="transparent", border_width=1,
+                    border_color=ACCENT_BLUE, text_color=ACCENT_BLUE,
+                    hover_color=("#e8f0fe", "#1a3a5c"),
+                    command=self._recheck_permission,
+                ).pack(side="left")
+
+        def _build_ready(self) -> None:
+            ctk.CTkLabel(
+                self._content, text="🎉", font=ctk.CTkFont(size=48),
+            ).pack(pady=(24, 12))
+            ctk.CTkLabel(
+                self._content, text=t("onboarding.ready_title"),
+                font=ctk.CTkFont(size=22, weight="bold"),
+            ).pack(pady=(0, 8))
+            ctk.CTkLabel(
+                self._content, text=t("onboarding.ready_desc"),
+                font=ctk.CTkFont(size=13), text_color=TEXT_SECONDARY,
+                wraplength=440, justify="center",
+            ).pack(pady=(0, 16))
+
+        def _open_settings(self) -> None:
+            _open_automation_settings()
+
+        def _recheck_permission(self) -> None:
+            self._permission_granted = _check_automation_permission()
+            self._show_step(1)
+
+        def _go_back(self) -> None:
+            if self._step > 0:
+                self._show_step(self._step - 1)
+
+        def _go_next(self) -> None:
+            if self._step < self._TOTAL_STEPS - 1:
+                self._show_step(self._step + 1)
+            else:
+                self._finish()
+
+        def _finish(self) -> None:
+            _mark_onboarding_done()
+            if self._on_complete:
+                self._on_complete()
+            self.destroy()
+
+        def _on_close(self) -> None:
+            # Closing the window also finishes onboarding
+            self._finish()
+
+
     class StatsCard(ctk.CTkFrame):
         """A single stat display card with a prominent number and label."""
 
@@ -392,9 +600,9 @@ else:
             super().__init__()
 
             self.title(APP_TITLE)
-            self.geometry("720x880")
             self.minsize(640, 720)
             self.configure(fg_color=BG_PRIMARY)
+            _center_window(self, 720, 880)
 
             self._source_path: Path | None = None
             self._is_running = False
@@ -446,34 +654,31 @@ else:
                 self.add_log(t("log.source_rechosen", path=chosen))
 
         def _show_onboarding(self) -> None:
-            """Check Automation permission on every launch; show intro only on first run."""
+            """Show step-by-step onboarding on first run; check permission on every launch."""
             if not _check_onboarding_done():
-                messagebox.showinfo(t(ONBOARDING_DIALOG_TITLE), t(ONBOARDING_DIALOG_TEXT))
-                _mark_onboarding_done()
+                dialog = OnboardingDialog(self)
+                self.wait_window(dialog)
+                return
 
-            while True:
-                self.add_log(t("log.checking_automation"))
-                if _check_automation_permission():
-                    self.add_log(t("log.automation_granted"))
-                    break
-
+            # Not first run — still check automation permission
+            self.add_log(t("log.checking_automation"))
+            if _check_automation_permission():
+                self.add_log(t("log.automation_granted"))
+            else:
                 self.add_log(t("log.automation_not_granted"))
                 open_prefs = messagebox.askyesno(
                     t("dialog.permission_missing_title"),
                     t("dialog.permission_missing_message"),
                     icon="warning",
                 )
-                if not open_prefs:
+                if open_prefs:
+                    _open_automation_settings()
+                    messagebox.showinfo(
+                        t("dialog.grant_permission_title"),
+                        t("dialog.grant_permission_message"),
+                    )
+                else:
                     self.add_log(t("log.automation_declined"))
-                    break
-
-                subprocess.Popen(
-                    ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
-                )
-                messagebox.showinfo(
-                    t("dialog.grant_permission_title"),
-                    t("dialog.grant_permission_message"),
-                )
 
         def _build_ui(self) -> None:
             self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -503,7 +708,7 @@ else:
                 icon_row, text=APP_TITLE, font=ctk.CTkFont(size=18, weight="bold"),
             ).pack(side="left")
             ctk.CTkLabel(
-                icon_row, text="v0.3.0", font=ctk.CTkFont(size=11),
+                icon_row, text=f"v{APP_VERSION}", font=ctk.CTkFont(size=11),
                 text_color=TEXT_SECONDARY,
             ).pack(side="left", padx=(8, 0))
             self.settings_btn = ctk.CTkButton(
@@ -674,7 +879,7 @@ else:
             footer = ctk.CTkFrame(self.main_frame, fg_color="transparent")
             footer.pack(fill="x", pady=(8, 0))
             ctk.CTkLabel(
-                footer, text="v0.3.0", font=ctk.CTkFont(size=10),
+                footer, text=f"v{APP_VERSION}", font=ctk.CTkFont(size=10),
                 text_color=TEXT_SECONDARY,
             ).pack(side="left")
             ctk.CTkButton(
@@ -701,6 +906,24 @@ else:
         def _on_start(self) -> None:
             if not self._source_path:
                 return
+            # Edge case: source folder no longer accessible
+            if not _check_source_access(self._source_path):
+                messagebox.showwarning(APP_TITLE, t("error.source_not_accessible"))
+                self.add_log(t("error.source_not_accessible"))
+                return
+            # Edge case: no media files in source folder
+            if not _has_media_files(self._source_path):
+                messagebox.showinfo(APP_TITLE, t("error.no_media_files"))
+                self.add_log(t("error.no_media_files"))
+                return
+            # Edge case: Photos.app not installed
+            if not _check_photos_installed():
+                messagebox.showerror(APP_TITLE, t("error.photos_not_installed"))
+                self.add_log(t("error.photos_not_installed"))
+                return
+            # Edge case: no album name → use default
+            if not self.album_var.get().strip():
+                self.album_var.set(DEFAULT_ALBUM_NAME)
             self._refresh_library_options()
             self._start_import_run()
 
