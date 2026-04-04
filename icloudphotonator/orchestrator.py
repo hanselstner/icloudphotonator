@@ -21,6 +21,7 @@ from .resilience import NetworkMonitor
 from .scanner import FileInfo, MediaType, ScanCancelledError, Scanner
 from .staging import StagingManager, validate_media_file
 from .state import FileStatus, JobState, transition
+from .settings import ImportSettings
 from .throttle import ThrottleController
 
 
@@ -53,14 +54,18 @@ class ImportOrchestrator:
         active_job_path: Path | None = None,
         library: Path | None = None,
         album: str | None = None,
+        settings: ImportSettings | None = None,
     ):
         self._db_path = Path(db_path)
         self._active_job_path = Path(active_job_path) if active_job_path else DEFAULT_ACTIVE_JOB_PATH
         self.library = Path(library) if library else None
         self.album = album
+        self._settings = settings or ImportSettings()
         self.db = Database(self._db_path)
-        self.throttle = ThrottleController()
-        self.staging = StagingManager(staging_dir)
+        self.throttle = ThrottleController(settings=self._settings)
+        self.staging = StagingManager(staging_dir, max_staging_size_gb=self._settings.max_staging_size_gb)
+        self.RESTART_PHOTOS_EVERY = self._settings.restart_photos_every
+        self._restart_wait_seconds = self._settings.restart_wait_seconds
         self.importer = PhotoImporter()
         self.preflight = PhotosPreflight()
         self._paused = asyncio.Event()
@@ -725,7 +730,7 @@ class ImportOrchestrator:
                 await self.restart_photos()
                 self._imports_since_restart = 0
                 self._emit_log(t("log.preventive_wait"))
-                await asyncio.sleep(120)
+                await asyncio.sleep(self._restart_wait_seconds)
                 self._emit_log(t("log.continue"))
 
             if fatal_permission_error:

@@ -84,7 +84,7 @@ def test_bridge_run_import_registers_permission_error_callback(
     captured: dict[str, object] = {}
 
     class FakeOrchestrator:
-        def __init__(self, db_path, staging_dir, active_job_path=None, library=None, album=None) -> None:
+        def __init__(self, db_path, staging_dir, active_job_path=None, library=None, album=None, settings=None) -> None:
             captured["db_path"] = db_path
 
         def on_progress(self, callback) -> None:

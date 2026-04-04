@@ -21,9 +21,10 @@ except ModuleNotFoundError as exc:
 else:
     _UI_IMPORT_ERROR = None
 
-from icloudphotonator.i18n import t
+from icloudphotonator.i18n import t, load_locale, get_locale
 from icloudphotonator.importer import find_photo_libraries
 from icloudphotonator.persistence import APP_DIR
+from icloudphotonator.settings import ImportSettings
 
 from .bridge import BackendBridge
 
@@ -201,6 +202,140 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
 else:
 
 
+    class SettingsDialog(ctk.CTkToplevel):
+        """Settings dialog for configuring import parameters."""
+
+        _LANG_MAP = {"English": "en", "Deutsch": "de"}
+        _LANG_REVERSE = {v: k for k, v in _LANG_MAP.items()}
+
+        def __init__(self, master, settings: ImportSettings, on_save: "Callable[[ImportSettings], None] | None" = None):
+            super().__init__(master)
+            self.title(t("settings.title"))
+            self.geometry("480x600")
+            self.resizable(False, False)
+            self.grab_set()
+            self.configure(fg_color=BG_PRIMARY)
+            self._settings = settings
+            self._on_save = on_save
+            self._vars: dict[str, tk.Variable] = {}
+            self._build_ui()
+
+        def _build_ui(self) -> None:
+            container = ctk.CTkScrollableFrame(self, fg_color="transparent")
+            container.pack(fill="both", expand=True, padx=16, pady=(12, 0))
+
+            # Intro text
+            ctk.CTkLabel(
+                container, text=t("settings.intro"),
+                font=ctk.CTkFont(size=11), text_color=TEXT_SECONDARY,
+                wraplength=430, justify="left",
+            ).pack(fill="x", pady=(0, 12))
+
+            # --- Import Performance ---
+            self._section_label(container, t("settings.performance"))
+            card1 = self._card(container)
+            self._spinbox_row(card1, "min_batch_size", t("settings.min_batch"), 1, 50, 1)
+            self._spinbox_row(card1, "max_batch_size", t("settings.max_batch"), 5, 100, 5)
+            self._spinbox_row(card1, "cooldown_seconds", t("settings.cooldown"), 5, 300, 5, t("settings.seconds"))
+            self._spinbox_row(card1, "extended_cooldown_seconds", t("settings.extended_cooldown"), 30, 600, 30, t("settings.seconds"))
+            self._spinbox_row(card1, "extended_cooldown_every", t("settings.extended_every"), 10, 500, 10, t("settings.imports"))
+
+            # --- Photos Management ---
+            self._section_label(container, t("settings.photos"))
+            card2 = self._card(container)
+            self._spinbox_row(card2, "restart_photos_every", t("settings.restart_every"), 100, 2000, 100, t("settings.imports"))
+            self._spinbox_row(card2, "restart_wait_seconds", t("settings.restart_wait"), 30, 300, 30, t("settings.seconds"))
+
+            # --- Storage ---
+            self._section_label(container, t("settings.storage"))
+            card3 = self._card(container)
+            self._spinbox_row(card3, "max_staging_size_gb", t("settings.max_staging"), 1, 50, 1, t("settings.gb"), is_float=True)
+
+            # --- Language ---
+            self._section_label(container, t("settings.language"))
+            card4 = self._card(container)
+            lang_row = ctk.CTkFrame(card4, fg_color="transparent")
+            lang_row.pack(fill="x", pady=4)
+            lang_var = tk.StringVar(value=self._LANG_REVERSE.get(self._settings.locale, "English"))
+            self._vars["locale"] = lang_var
+            ctk.CTkLabel(lang_row, text=t("settings.language"), font=ctk.CTkFont(size=12), width=180, anchor="w").pack(side="left")
+            ctk.CTkComboBox(lang_row, variable=lang_var, values=list(self._LANG_MAP.keys()), state="readonly", width=140).pack(side="left", padx=(0, 8))
+            ctk.CTkLabel(
+                card4, text=t("settings.language_restart_hint"),
+                font=ctk.CTkFont(size=10), text_color=TEXT_SECONDARY,
+            ).pack(anchor="w", pady=(0, 4))
+
+            # --- Buttons ---
+            btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+            btn_frame.pack(fill="x", padx=16, pady=12)
+            ctk.CTkButton(
+                btn_frame, text=t("settings.reset"), width=120, height=32, corner_radius=8,
+                fg_color="transparent", border_width=1, border_color=BORDER,
+                text_color=TEXT_PRIMARY, hover_color=("#e8e8ed", "#3a3a3c"),
+                command=self._on_reset,
+            ).pack(side="left")
+            ctk.CTkButton(
+                btn_frame, text=t("settings.save"), width=80, height=32, corner_radius=8,
+                fg_color=ACCENT_BLUE, hover_color="#005EC4",
+                command=self._on_save_click,
+            ).pack(side="right")
+            ctk.CTkButton(
+                btn_frame, text=t("settings.cancel"), width=80, height=32, corner_radius=8,
+                fg_color="transparent", border_width=1, border_color=BORDER,
+                text_color=TEXT_PRIMARY, hover_color=("#e8e8ed", "#3a3a3c"),
+                command=self.destroy,
+            ).pack(side="right", padx=(0, 8))
+
+        def _section_label(self, parent, text: str) -> None:
+            ctk.CTkLabel(parent, text=text, font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", pady=(8, 4))
+
+        def _card(self, parent) -> ctk.CTkFrame:
+            card = ctk.CTkFrame(parent, corner_radius=10, border_width=1, border_color=BORDER, fg_color=BG_CARD)
+            card.pack(fill="x", pady=(0, 4))
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=12, pady=8)
+            return inner
+
+        def _spinbox_row(self, parent, key: str, label: str, from_: int, to: int, step: int, unit: str = "", is_float: bool = False) -> None:
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", pady=3)
+            ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=12), width=180, anchor="w").pack(side="left")
+            current = getattr(self._settings, key)
+            if is_float:
+                var = tk.DoubleVar(value=float(current))
+            else:
+                var = tk.IntVar(value=int(current))
+            self._vars[key] = var
+
+            spin = tk.Spinbox(
+                row, from_=from_, to=to, increment=step,
+                textvariable=var, width=8, justify="center",
+                relief="flat", bd=1,
+            )
+            spin.pack(side="left", padx=(0, 6))
+            if unit:
+                ctk.CTkLabel(row, text=unit, font=ctk.CTkFont(size=11), text_color=TEXT_SECONDARY).pack(side="left")
+
+        def _on_reset(self) -> None:
+            defaults = ImportSettings()
+            for key, var in self._vars.items():
+                if key == "locale":
+                    var.set(self._LANG_REVERSE.get(defaults.locale, "English"))
+                else:
+                    var.set(getattr(defaults, key))
+
+        def _on_save_click(self) -> None:
+            for key, var in self._vars.items():
+                if key == "locale":
+                    self._settings.locale = self._LANG_MAP.get(var.get(), "en")
+                else:
+                    setattr(self._settings, key, var.get())
+            self._settings.save()
+            if self._on_save:
+                self._on_save(self._settings)
+            self.destroy()
+
+
     class StatsCard(ctk.CTkFrame):
         """A single stat display card with a prominent number and label."""
 
@@ -271,6 +406,7 @@ else:
             self.album_var = tk.StringVar(value="")
             self.library_var = tk.StringVar(value=t("app.default_library"))
             self._library_options: dict[str, Path | None] = {}
+            self._settings = ImportSettings.load()
             self._bridge = BackendBridge()
             self._bridge.set_callbacks(
                 on_progress=self._handle_progress,
@@ -372,7 +508,7 @@ else:
             ).pack(side="left", padx=(8, 0))
             self.settings_btn = ctk.CTkButton(
                 header, text="⚙️", width=32, height=32, corner_radius=8,
-                fg_color="transparent", hover_color=BORDER, command=None,
+                fg_color="transparent", hover_color=BORDER, command=self._open_settings,
             )
             self.settings_btn.pack(side="right")
 
@@ -801,6 +937,13 @@ else:
 
         def add_log(self, message: str) -> None:
             self.after(0, lambda: self.log_view.append(message))
+
+        def _open_settings(self) -> None:
+            SettingsDialog(self, self._settings, on_save=self._apply_settings)
+
+        def _apply_settings(self, settings: ImportSettings) -> None:
+            self._settings = settings
+            load_locale(settings.locale)
 
         def _on_close(self) -> None:
             if self._is_running:

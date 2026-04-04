@@ -194,13 +194,16 @@ class BackendBridge:
             asyncio.set_event_loop(self._loop)
 
             from icloudphotonator.orchestrator import ImportOrchestrator
+            from icloudphotonator.settings import ImportSettings
 
+            settings = ImportSettings.load()
             orchestrator = ImportOrchestrator(
                 self._db_path,
                 self._staging_dir,
                 active_job_path=self._active_job_path,
                 library=library,
                 album=album,
+                settings=settings,
             )
             self._orchestrator = orchestrator
             self._register_callback(orchestrator, "on_progress", self._on_progress)

@@ -138,6 +138,28 @@
   "error.network_file_not_staged": "Netzwerkdatei nicht gestaged — übersprungen",
   "error.photos_not_responding": "Photos.app reagiert nicht",
   "error.import_failed": "Import gescheitert: {name}",
-  "error.stuck_interrupted": "Import wurde durch App-Neustart unterbrochen"
+  "error.stuck_interrupted": "Import wurde durch App-Neustart unterbrochen",
+
+  "settings.title": "Einstellungen",
+  "settings.intro": "Dies sind empfohlene Standardwerte, die für die meisten Systeme gut funktionieren. Wenn Photos.app instabil wird, reduziere die Batch-Größen und erhöhe die Cooldowns. Wenn dein System Imports gut verarbeitet, kannst du die Geschwindigkeit vorsichtig erhöhen.",
+  "settings.performance": "Import-Performance",
+  "settings.photos": "Photos-Verwaltung",
+  "settings.storage": "Speicher",
+  "settings.language": "Sprache",
+  "settings.min_batch": "Min. Batch-Größe",
+  "settings.max_batch": "Max. Batch-Größe",
+  "settings.cooldown": "Cooldown zwischen Batches",
+  "settings.extended_cooldown": "Erweiterter Cooldown",
+  "settings.extended_every": "Erweiterter Cooldown alle",
+  "settings.restart_every": "Photos neustarten alle",
+  "settings.restart_wait": "Warten nach Neustart",
+  "settings.max_staging": "Max. Staging-Größe",
+  "settings.reset": "Auf Standard zurücksetzen",
+  "settings.cancel": "Abbrechen",
+  "settings.save": "Speichern",
+  "settings.language_restart_hint": "App neustarten, um Sprachwechsel anzuwenden",
+  "settings.seconds": "Sekunden",
+  "settings.imports": "Imports",
+  "settings.gb": "GB"
 }
 

@@ -138,6 +138,28 @@
   "error.network_file_not_staged": "Network file not staged — skipped",
   "error.photos_not_responding": "Photos.app is not responding",
   "error.import_failed": "Import failed: {name}",
-  "error.stuck_interrupted": "Import was interrupted by app restart"
+  "error.stuck_interrupted": "Import was interrupted by app restart",
+
+  "settings.title": "Settings",
+  "settings.intro": "These are recommended defaults that work well for most systems. If Photos.app becomes unstable, reduce batch sizes and increase cooldowns. If your system handles imports well, you can carefully increase speeds.",
+  "settings.performance": "Import Performance",
+  "settings.photos": "Photos Management",
+  "settings.storage": "Storage",
+  "settings.language": "Language",
+  "settings.min_batch": "Min Batch Size",
+  "settings.max_batch": "Max Batch Size",
+  "settings.cooldown": "Cooldown between batches",
+  "settings.extended_cooldown": "Extended cooldown",
+  "settings.extended_every": "Extended cooldown every",
+  "settings.restart_every": "Restart Photos every",
+  "settings.restart_wait": "Wait after restart",
+  "settings.max_staging": "Max staging size",
+  "settings.reset": "Reset to Defaults",
+  "settings.cancel": "Cancel",
+  "settings.save": "Save",
+  "settings.language_restart_hint": "Restart app to apply language change",
+  "settings.seconds": "seconds",
+  "settings.imports": "imports",
+  "settings.gb": "GB"
 }
 

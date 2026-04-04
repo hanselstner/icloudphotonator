@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .settings import ImportSettings
+
 
 class ThrottleController:
     """Dynamically adjusts batch sizes and cooldown periods."""
@@ -12,7 +17,15 @@ class ThrottleController:
         cooldown_seconds: float = 60,
         extended_cooldown_seconds: float = 180,
         extended_cooldown_every: int = 50,
+        settings: "ImportSettings | None" = None,
     ):
+        if settings is not None:
+            min_batch_size = settings.min_batch_size
+            max_batch_size = settings.max_batch_size
+            initial_batch_size = settings.min_batch_size
+            cooldown_seconds = settings.cooldown_seconds
+            extended_cooldown_seconds = settings.extended_cooldown_seconds
+            extended_cooldown_every = settings.extended_cooldown_every
         self._min_batch_size = max(1, min_batch_size)
         self._max_batch_size = max(self._min_batch_size, max_batch_size)
         self._current_batch_size = min(
