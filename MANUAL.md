@@ -1,62 +1,62 @@
-# 📖 iCloudPhotonator — Benutzerhandbuch
+# 📖 iCloudPhotonator — User Manual
 
-## Inhaltsverzeichnis
+## Table of Contents
 
-1. [Systemvoraussetzungen](#1-systemvoraussetzungen)
+1. [System Requirements](#1-system-requirements)
 2. [Installation](#2-installation)
-3. [Erster Start & Berechtigungen](#3-erster-start--berechtigungen)
-4. [Import starten (GUI)](#4-import-starten-gui)
-5. [Import starten (CLI)](#5-import-starten-cli)
-6. [Während des Imports](#6-während-des-imports)
-7. [Fehler und Probleme](#7-fehler-und-probleme)
-8. [Import fortsetzen nach Unterbrechung](#8-import-fortsetzen-nach-unterbrechung)
-9. [Nach dem Import](#9-nach-dem-import)
-10. [FAQ](#10-faq)
-11. [Technische Details für Fortgeschrittene](#11-technische-details-für-fortgeschrittene)
+3. [First Launch & Permissions](#3-first-launch--permissions)
+4. [Settings](#4-settings)
+5. [Starting an Import (GUI)](#5-starting-an-import-gui)
+6. [Starting an Import (CLI)](#6-starting-an-import-cli)
+7. [During the Import](#7-during-the-import)
+8. [Errors and Troubleshooting](#8-errors-and-troubleshooting)
+9. [Resuming after Interruption](#9-resuming-after-interruption)
+10. [After the Import](#10-after-the-import)
+11. [FAQ](#11-faq)
+12. [Technical Details for Advanced Users](#12-technical-details-for-advanced-users)
 
 ---
 
-## 1. Systemvoraussetzungen
+## 1. System Requirements
 
-| Anforderung | Details |
+| Requirement | Details |
 |---|---|
-| **Betriebssystem** | macOS 13 (Ventura) oder neuer |
-| **Apple Fotos** | Muss auf dem System installiert und mindestens einmal geöffnet worden sein |
-| **Python** | 3.13+ (nur wenn du die App selbst bauen oder die CLI verwenden möchtest) |
-| **Speicherplatz** | Mindestens 10 GB freier Speicher auf dem Systemlaufwerk (für Staging) |
-| **iCloud Fotos** | Optional — wenn die Ziel-Mediathek mit iCloud synchronisiert wird, sollte iCloud Fotos aktiviert sein |
+| **Operating System** | macOS 13 (Ventura) or newer |
+| **Apple Photos** | Must be installed and opened at least once |
+| **Python** | 3.13+ (only if building the app yourself or using the CLI) |
+| **Disk Space** | At least 10 GB free space on the system drive (for staging) |
+| **iCloud Photos** | Optional — if the target library syncs with iCloud, iCloud Photos should be enabled |
 
-### Unterstützte Quellen
+### Supported Sources
 
-- Lokale Ordner (z. B. `~/Pictures/Archiv`)
-- Externe Festplatten (z. B. `/Volumes/USB-Platte/Fotos`)
-- Netzlaufwerke via SMB, NFS oder AFP (z. B. `/Volumes/NAS/Fotos`)
+- Local folders (e.g., `~/Pictures/Archive`)
+- External drives (e.g., `/Volumes/USB-Drive/Photos`)
+- Network drives via SMB, NFS, or AFP (e.g., `/Volumes/NAS/Photos`)
 
-### Unterstützte Medienformate
+### Supported Media Formats
 
-Alle Formate, die Apple Fotos akzeptiert, u. a.:
-- **Fotos**: JPEG, HEIC, PNG, TIFF, RAW (CR2, NEF, ARW, etc.)
+All formats accepted by Apple Photos, including:
+- **Photos**: JPEG, HEIC, PNG, TIFF, RAW (CR2, NEF, ARW, etc.)
 - **Videos**: MOV, MP4, M4V
-- **Live Photos**: Werden automatisch erkannt wenn Foto und Video denselben Basisnamen haben
+- **Live Photos**: Automatically detected when photo and video share the same base name
 
 ---
 
 ## 2. Installation
 
-### Option A: Fertige .app verwenden
+### Option A: Use a Pre-built .app
 
-Falls du eine fertige `iCloudPhotonator.app` erhalten hast:
+If you have a pre-built `iCloudPhotonator.app`:
 
-1. Kopiere die App in den Ordner **Programme** (`/Applications`)
-2. Beim ersten Öffnen: Rechtsklick → **Öffnen** (wegen Gatekeeper-Warnung bei unsignierten Apps)
-3. Bestätige mit **Öffnen**
+1. Copy the app to your **Applications** folder (`/Applications`)
+2. On first launch: Right-click → **Open** (to bypass Gatekeeper warning for unsigned apps)
+3. Confirm with **Open**
 
-### Option B: Selbst bauen
+### Option B: Build from Source
 
 ```bash
 git clone https://github.com/hanselstner/icloudphototnator.git
 cd icloudphototnator
-export PATH="$HOME/.local/bin:$PATH"
 uv sync
 uv run pyinstaller iCloudPhotonator.spec
 open dist/iCloudPhotonator.app
@@ -64,306 +64,361 @@ open dist/iCloudPhotonator.app
 
 ---
 
-## 3. Erster Start & Berechtigungen
+## 3. First Launch & Permissions
 
-Beim ersten Start führt die App durch die notwendigen macOS-Berechtigungen. Ohne diese Berechtigungen kann die App **nicht importieren**.
+### Onboarding Wizard
 
-### Automation-Berechtigung
+On first launch, iCloudPhotonator shows a **step-by-step onboarding wizard** that guides you through the necessary setup:
 
-Die App muss Apple Fotos per AppleScript steuern dürfen.
+1. **Welcome**: Overview of what the app does
+2. **Permissions**: The app requests the required macOS permissions:
+   - **Automation permission**: Allows the app to control Apple Photos via AppleScript
+   - **Photo Library access**: Allows the app to access your photo library
+3. **Ready**: Confirmation that everything is set up
 
-1. Die App zeigt einen Dialog: *„iCloudPhotonator möchte Fotos steuern"*
-2. Klicke auf **OK**
-3. Falls der Dialog nicht erscheint oder du ihn abgelehnt hast:
-   - Öffne **Systemeinstellungen → Datenschutz & Sicherheit → Automation**
-   - Aktiviere **Fotos** unter **iCloudPhotonator**
+### Automation Permission
 
-### Fotos-Zugriff
+The app needs to control Apple Photos via AppleScript.
 
-Apple Fotos muss geöffnet und bereit sein.
+1. The app shows a dialog: *"iCloudPhotonator wants to control Photos"*
+2. Click **OK**
+3. If the dialog doesn't appear or you declined:
+   - Open **System Settings → Privacy & Security → Automation**
+   - Enable **Photos** under **iCloudPhotonator**
 
-- Die App prüft automatisch, ob Photos.app läuft und ansprechbar ist (**Preflight-Check**)
-- Falls Photos nicht läuft, wird es automatisch gestartet
-- Falls Photos nicht reagiert, wird ein Neustart versucht
+### Photos Access
 
-### Netzlaufwerk-Zugriff
+Apple Photos must be open and responsive.
 
-Wenn du von einem NAS oder Netzlaufwerk importierst:
+- The app automatically checks if Photos.app is running and responsive (**Preflight Check**)
+- If Photos is not running, it is started automatically
+- If Photos is unresponsive, a restart is attempted
 
-1. Stelle sicher, dass das Laufwerk **gemountet** ist (im Finder sichtbar unter `/Volumes/`)
-2. Prüfe, dass du **Lesezugriff** auf die Foto-Ordner hast
-3. Die App erkennt Netzwerkpfade automatisch und aktiviert das **lokale Staging**
+### Network Drive Access
 
----
+When importing from a NAS or network drive:
 
-## 4. Import starten (GUI)
-
-### Schritt 1: Quellordner wählen
-
-Klicke auf **„Ordner wählen"** und navigiere zum Ordner mit deinen Fotos und Videos. Die App durchsucht den gewählten Ordner und alle Unterordner rekursiv.
-
-### Schritt 2: Album-Name
-
-- Standardmäßig wird der **Name des Quellordners** als Album-Name verwendet
-- Du kannst den Namen im Textfeld anpassen
-- Alle importierten Fotos werden diesem Album in Apple Fotos zugeordnet
-
-### Schritt 3: Mediathek auswählen
-
-- Die App sucht automatisch nach Apple-Fotos-Mediatheken in `~/Pictures` und `/Users/Shared`
-- Wähle die gewünschte Ziel-Mediathek aus dem Dropdown
-- Die Standard-Mediathek ist vorausgewählt
-
-### Schritt 4: Import starten
-
-Klicke auf **„Import starten"**. Der Ablauf:
-
-1. **Scan-Phase**: Alle Dateien werden inventarisiert (keine Dateien werden kopiert)
-2. **Duplikat-Erkennung**: Bereits bekannte Dateien (per SHA-256-Hash) werden übersprungen
-3. **Staging**: Netzwerkdateien werden lokal zwischengespeichert (max. 10 GB)
-4. **Import**: Dateien werden batchweise nach Apple Fotos importiert
-5. **Cleanup**: Staging-Dateien werden nach erfolgreichem Import gelöscht
+1. Make sure the drive is **mounted** (visible in Finder under `/Volumes/`)
+2. Verify you have **read access** to the photo folders
+3. The app detects network paths automatically and enables **local staging**
 
 ---
 
-## 5. Import starten (CLI)
+## 4. Settings
 
-### Einfacher Import
+Access settings via the **gear icon** (⚙️) in the top-right corner of the app.
+
+### Import Performance
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Min Batch Size** | 5 | Minimum number of files per import batch |
+| **Max Batch Size** | 20 | Maximum number of files per import batch |
+| **Cooldown between batches** | 60s | Wait time between successive batches |
+| **Extended cooldown** | 180s | Longer cooldown applied periodically |
+| **Extended cooldown every** | 50 imports | How often the extended cooldown is triggered |
+
+### Photos Management
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Restart Photos every** | 500 imports | Proactively restart Photos to prevent instability |
+| **Wait after restart** | 120s | Time to wait after restarting Photos |
+
+### Storage
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Max staging size** | 10 GB | Maximum local staging space for network files |
+
+### Language
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Language** | English | UI language (English or Deutsch). Requires app restart. |
+
+> **Tip:** The defaults work well for most systems. If Photos.app becomes unstable during import, reduce batch sizes and increase cooldowns. If your system handles imports well, you can carefully increase speeds.
+
+Settings are saved to `~/.icloudphotonator/settings.json` and persist across app restarts.
+
+---
+
+## 5. Starting an Import (GUI)
+
+### Step 1: Choose Source Folder
+
+Click **"Browse"** and navigate to the folder containing your photos and videos. The app searches the selected folder and all subfolders recursively.
+
+### Step 2: Album Name
+
+- By default, the **source folder name** is used as the album name
+- You can customize the name in the text field
+- All imported photos will be assigned to this album in Apple Photos
+
+### Step 3: Select Library
+
+- The app automatically searches for Apple Photos libraries in `~/Pictures` and `/Users/Shared`
+- Select your desired target library from the dropdown
+- The default system library is pre-selected
+
+### Step 4: Start Import
+
+Click **"Start"**. The workflow:
+
+1. **Scan Phase**: All files are inventoried (no files are copied)
+2. **Duplicate Detection**: Already known files (by SHA-256 hash) are skipped
+3. **Staging**: Network files are locally cached (max 10 GB)
+4. **Import**: Files are imported into Apple Photos in batches
+5. **Cleanup**: Staging files are deleted after successful import
+
+---
+
+## 6. Starting an Import (CLI)
+
+### Simple Import
 
 ```bash
-uv run icloudphotonator import-photos "/Volumes/NAS/Fotos"
+uv run icloudphotonator import-photos "/Volumes/NAS/Photos"
 ```
 
-### Mit Optionen
+### With Options
 
 ```bash
-uv run icloudphotonator import-photos "/Volumes/NAS/Fotos" \
-  --album "Familienarchiv" \
-  --mediathek "$HOME/Pictures/Familie.photoslibrary"
+uv run icloudphotonator import-photos "/Volumes/NAS/Photos" \
+  --album "Family Archive" \
+  --library "$HOME/Pictures/Family.photoslibrary"
 ```
 
-### Alle Optionen
+### All Options
 
-| Option | Beschreibung |
+| Option | Description |
 |--------|-------------|
-| `--album` | Name des Ziel-Albums (Standard: Name des Quellordners) |
-| `--library` / `--mediathek` | Pfad zur Ziel-Mediathek |
-| `--staging-dir` | Lokaler Ordner für Netzwerk-Staging |
-| `--db-path` | Pfad zur SQLite-Datenbank |
-| `--help` | Alle verfügbaren Optionen anzeigen |
+| `--album` | Target album name (default: source folder name) |
+| `--library` / `--mediathek` | Path to the target library |
+| `--staging-dir` | Local folder for network staging |
+| `--db-path` | Path to the SQLite database |
+| `--help` | Show all available options |
 
 ---
 
-## 6. Während des Imports
+## 7. During the Import
 
-### Fortschrittsanzeige verstehen
+### Understanding the Progress Display
 
-Die GUI zeigt folgende Kennzahlen:
+The GUI shows the following metrics:
 
-| Anzeige | Bedeutung |
-|---------|-----------|
-| **Entdeckt** | Gesamtzahl der gefundenen Mediendateien |
-| **Importiert** | Erfolgreich nach Apple Fotos importierte Dateien |
-| **Duplikate** | Übersprungene Dateien, da sie bereits existieren |
-| **Fehler** | Dateien, bei denen der Import fehlgeschlagen ist |
-| **Staged** | Aktuell lokal zwischengespeicherte Dateien (bei Netzwerkquellen) |
+| Display | Meaning |
+|---------|---------|
+| **Discovered** | Total number of media files found |
+| **Imported** | Files successfully imported into Apple Photos |
+| **Duplicates** | Skipped files because they already exist |
+| **Errors** | Files where the import failed |
+| **Staged** | Currently locally cached files (for network sources) |
 
-### Pause / Fortsetzen / Abbrechen
+### Pause / Resume / Cancel
 
-- **Pause**: Klicke auf **„Pause"** — der aktuelle Batch wird noch abgeschlossen, dann stoppt der Import
-- **Fortsetzen**: Klicke auf **„Fortsetzen"** — der Import macht exakt dort weiter, wo er pausiert wurde
-- **Abbrechen**: Klicke auf **„Abbrechen"** — der Import wird beendet, der Fortschritt bleibt gespeichert
+- **Pause**: Click **"Pause"** — the current batch completes, then the import stops
+- **Resume**: Click **"Resume"** — the import continues exactly where it paused
+- **Cancel**: Click **"Stop"** — the import ends, progress is saved
 
-### Was die Status bedeuten
+### File Status Meanings
 
-| Status | Bedeutung |
-|--------|-----------|
-| `pending` | Datei wurde erkannt, aber noch nicht verarbeitet |
-| `importing` | Datei wird gerade importiert |
-| `imported` | Datei wurde erfolgreich nach Apple Fotos importiert |
-| `duplicate` | Datei wurde als Duplikat erkannt und übersprungen |
-| `error` | Import dieser Datei ist fehlgeschlagen |
-| `skipped` | Datei wurde bewusst übersprungen (z. B. zu groß für Staging) |
-
----
-
-## 7. Fehler und Probleme
-
-### „Photos.app reagiert nicht"
-
-**Was passiert automatisch:**
-
-Die App hat eine 4-stufige Eskalationslogik:
-
-1. **Stufe 1**: 2 Minuten Pause, dann Retry
-2. **Stufe 2**: 5 Minuten Pause, dann Retry
-3. **Stufe 3**: Photos.app wird automatisch neugestartet (Graceful Shutdown mit bis zu 60s Wartezeit)
-4. **Stufe 4**: Die App pausiert und zeigt einen Dialog — manueller Eingriff nötig
-
-Zusätzlich wird Photos **alle 500 erfolgreichen Imports** präventiv neugestartet, um Speicherlecks vorzubeugen.
-
-**Was du tun kannst:**
-- Warte ab — die meisten Probleme löst die App automatisch
-- Bei Stufe 4: Öffne Photos manuell, warte bis es vollständig geladen ist, dann klicke „Fortsetzen"
-
-### Netzwerkverbindung verloren
-
-**Was passiert automatisch:**
-- Die App erkennt den Verbindungsverlust innerhalb von 10 Sekunden
-- Der Import wird **automatisch pausiert**
-- Sobald das Netzwerk wieder verfügbar ist, wird der Import **automatisch fortgesetzt**
-- Keine Dateien gehen verloren
-
-**Was du tun kannst:**
-- Prüfe die Netzwerkverbindung (Finder → Netzlaufwerk noch sichtbar?)
-- Die App setzt selbstständig fort, sobald der Pfad wieder erreichbar ist
-
-### „Staging area is full"
-
-**Was passiert automatisch:**
-- Das Staging-Limit (10 GB) wurde erreicht
-- Die App wartet, bis importierte Staging-Dateien aufgeräumt wurden
-- Dann werden neue Dateien gestaged und der Import fortgesetzt
-
-**Was du tun kannst:**
-- Nichts — die App regelt das automatisch
-- Bei Bedarf: Freien Speicherplatz auf dem Systemlaufwerk schaffen
-
-### „Datei zu groß für Staging"
-
-- Einzelne Dateien, die das Staging-Limit überschreiten, werden **übersprungen**
-- Diese erscheinen als `skipped` in der Fortschrittsanzeige
-- Importiere diese Dateien manuell über Apple Fotos (Drag & Drop)
-
-### Berechtigungsfehler
-
-Wenn die App die Automation-Berechtigung verloren hat:
-
-1. Die App zeigt einen Dialog mit Hinweis
-2. Klicke auf **„Systemeinstellungen öffnen"**
-3. Navigiere zu **Datenschutz & Sicherheit → Automation**
-4. Aktiviere **Fotos** unter **iCloudPhotonator**
-5. Starte die App neu
+| Status | Meaning |
+|--------|---------|
+| `pending` | File was recognized but not yet processed |
+| `importing` | File is currently being imported |
+| `imported` | File was successfully imported into Apple Photos |
+| `duplicate` | File was detected as a duplicate and skipped |
+| `error` | Import of this file failed |
+| `skipped` | File was intentionally skipped (e.g., too large for staging) |
 
 ---
 
-## 8. Import fortsetzen nach Unterbrechung
+## 8. Errors and Troubleshooting
 
-### App-Neustart
+### "Photos.app is not responding"
 
-1. Starte iCloudPhotonator
-2. Die App erkennt automatisch den unvollständigen Job
-3. Ein Dialog fragt: *„Unvollständiger Import gefunden. Fortsetzen?"*
-4. Klicke **„Fortsetzen"** — der Import startet dort, wo er aufgehört hat
-5. Bereits importierte Dateien werden **nicht** erneut importiert
+**What happens automatically:**
 
-### Rechner-Neustart
+The app has a 4-level escalation system:
 
-Genauso wie bei App-Neustart:
-1. Starte den Mac
-2. Öffne iCloudPhotonator
-3. Der unvollständige Job wird erkannt und kann fortgesetzt werden
+1. **Level 1**: 2-minute pause, then retry
+2. **Level 2**: 5-minute pause, then retry
+3. **Level 3**: Photos.app is automatically restarted (graceful shutdown with up to 60s wait)
+4. **Level 4**: The app pauses and shows a dialog — manual intervention required
 
-### Resume-Dialog
+Additionally, Photos is **proactively restarted every 500 successful imports** to prevent memory leaks.
 
-Der Resume-Dialog zeigt:
-- Name des unterbrochenen Jobs
-- Anzahl der bereits importierten Dateien
-- Anzahl der verbleibenden Dateien
-- Quellordner und Album-Name
+**What you can do:**
+- Wait — the app resolves most issues automatically
+- At Level 4: Open Photos manually, wait until fully loaded, then click "Resume"
 
----
+### Network Connection Lost
 
-## 9. Nach dem Import
+**What happens automatically:**
+- The app detects connection loss within 10 seconds
+- The import is **automatically paused**
+- Once the network is available again, the import **resumes automatically**
+- No files are lost
 
-### Import-Ergebnisse prüfen
+**What you can do:**
+- Check your network connection (Finder → is the network drive still visible?)
+- The app resumes on its own as soon as the path is reachable again
 
-Am Ende des Imports zeigt die App eine Zusammenfassung:
-- ✅ Erfolgreich importierte Dateien
-- ⏭️ Übersprungene Duplikate
-- ❌ Fehlerhafte Dateien
+### "Staging area is full"
 
-### Fehlerhafte Dateien nochmal versuchen
+**What happens automatically:**
+- The staging limit (10 GB) was reached
+- The app waits until imported staging files have been cleaned up
+- Then new files are staged and the import continues
 
-Wenn einzelne Dateien fehlgeschlagen sind:
+**What you can do:**
+- Nothing — the app handles this automatically
+- If needed: free up disk space on the system drive
 
-1. Klicke auf **„Fehler wiederholen"** in der GUI
-2. Oder per CLI: `uv run icloudphotonator retry-errors`
-3. Die App versucht nur die fehlgeschlagenen Dateien erneut zu importieren
+### "File too large for staging"
 
-**Tipp:** Manchmal scheitern Imports wegen vorübergehender Photos-Probleme. Ein Retry löst das oft.
+- Individual files exceeding the staging limit are **skipped**
+- These appear as `skipped` in the progress display
+- Import these files manually via Apple Photos (drag & drop)
 
----
+### Permission Error
 
-## 10. FAQ
+If the app has lost the Automation permission:
 
-**Werden meine Original-Dateien verändert oder gelöscht?**
-> Nein. iCloudPhotonator liest Dateien nur. Es werden keine Quelldateien verändert, verschoben oder gelöscht.
-
-**Kann ich mehrere Ordner importieren?**
-> Ja, aber nacheinander. Starte einen Import, warte bis er fertig ist, dann starte den nächsten mit einem anderen Quellordner.
-
-**Was passiert bei einem Stromausfall während des Imports?**
-> Der Fortschritt ist in der SQLite-Datenbank gespeichert. Nach dem Neustart des Macs kann der Import fortgesetzt werden.
-
-**Funktioniert die App mit geteilten Mediatheken (Shared Libraries)?**
-> Ja. Du kannst die Ziel-Mediathek in der GUI oder per CLI auswählen.
-
-**Wie lange dauert der Import von 50.000 Fotos?**
-> Das hängt von der Quelle ab. Von einer lokalen SSD: ca. 4–8 Stunden. Von einem NAS über Gigabit-Ethernet: ca. 8–16 Stunden. Die App ist darauf ausgelegt, diese langen Läufe stabil durchzuführen.
-
-**Kann ich den Mac während des Imports benutzen?**
-> Ja. Die App läuft im Hintergrund. Vermeide aber, Apple Fotos manuell zu benutzen, da dies den Import stören kann.
-
-**Was bedeuten die Cooldowns zwischen den Batches?**
-> Die App wartet absichtlich zwischen Batches (60 Sekunden, alle 100 Dateien sogar 180 Sekunden), um Apple Fotos und die iCloud-Synchronisierung nicht zu überlasten.
+1. The app shows a dialog with instructions
+2. Click **"Open System Settings"**
+3. Navigate to **Privacy & Security → Automation**
+4. Enable **Photos** under **iCloudPhotonator**
+5. Restart the app
 
 ---
 
-## 11. Technische Details für Fortgeschrittene
+## 9. Resuming after Interruption
 
-### Datenbank-Speicherort
+### App Restart
 
-Die SQLite-Datenbank wird standardmäßig unter folgendem Pfad gespeichert:
+1. Start iCloudPhotonator
+2. The app automatically detects the incomplete job
+3. A dialog asks: *"Incomplete import found. Resume?"*
+4. Click **"Resume"** — the import starts where it left off
+5. Already imported files are **not** re-imported
+
+### Computer Restart
+
+Same as app restart:
+1. Start the Mac
+2. Open iCloudPhotonator
+3. The incomplete job is detected and can be resumed
+
+### Resume Dialog
+
+The resume dialog shows:
+- Name of the interrupted job
+- Number of already imported files
+- Number of remaining files
+- Source folder and album name
+
+---
+
+## 10. After the Import
+
+### Review Import Results
+
+At the end of the import, the app shows a summary:
+- ✅ Successfully imported files
+- ⏭️ Skipped duplicates
+- ❌ Failed files
+
+### Retry Failed Files
+
+If some files failed:
+
+1. Click **"Retry"** in the GUI
+2. Or via CLI: `uv run icloudphotonator retry-errors`
+3. The app only retries the failed files
+
+**Tip:** Sometimes imports fail due to temporary Photos issues. A retry often resolves this.
+
+---
+
+## 11. FAQ
+
+**Are my original files modified or deleted?**
+> No. iCloudPhotonator only reads files. Source files are never modified, moved, or deleted.
+
+**Can I import multiple folders?**
+> Yes, but sequentially. Start one import, wait until it finishes, then start the next with a different source folder.
+
+**What happens during a power outage?**
+> Progress is stored in the SQLite database. After restarting the Mac, the import can be resumed.
+
+**Does the app work with shared libraries?**
+> Yes. You can select the target library in the GUI or via CLI.
+
+**How long does importing 50,000 photos take?**
+> Depends on the source. From a local SSD: ~4–8 hours. From a NAS over Gigabit Ethernet: ~8–16 hours. The app is designed to handle these long runs stably.
+
+**Can I use the Mac during the import?**
+> Yes. The app runs in the background. Avoid using Apple Photos manually though, as it may interfere with the import.
+
+**What are the cooldowns between batches?**
+> The app intentionally waits between batches (60 seconds by default, 180 seconds every 50 files) to avoid overwhelming Apple Photos and iCloud sync. These values are configurable in Settings.
+
+---
+
+## 12. Technical Details for Advanced Users
+
+### Database Location
+
+The SQLite database is stored at:
 
 ```
 ~/.icloudphotonator/
 ```
 
-Die Datenbank enthält:
-- Job-Definitionen (Quellordner, Album, Status)
-- Dateistatus aller gescannten Dateien
-- Hashes für Duplikat-Erkennung
-- Fortschrittsinformationen für Resume
+The database contains:
+- Job definitions (source folder, album, status)
+- File status for all scanned files
+- Hashes for duplicate detection
+- Progress information for resume
 
-### Log-Dateien
+### Settings File
 
-Logs werden im selben Verzeichnis gespeichert:
+User settings are stored at:
+
+```
+~/.icloudphotonator/settings.json
+```
+
+### Log Files
+
+Logs are stored in the same directory:
 
 ```
 ~/.icloudphotonator/icloudphotonator.log
 ```
 
-- Strukturiertes Logging mit Zeitstempeln
-- Automatische Log-Rotation
-- Hilfreich für die Fehlerdiagnose
+- Structured logging with timestamps
+- Automatic log rotation
+- Helpful for error diagnosis
 
-### Staging-Verzeichnis
+### Staging Directory
 
-Für Netzwerkdateien wird ein lokales Staging-Verzeichnis verwendet:
+For network files, a local staging directory is used:
 
 ```
 /var/folders/.../icloudphotonator-staging/
 ```
 
-- Maximale Größe: 10 GB
-- Wird nach jedem erfolgreichen Batch aufgeräumt
-- Bei App-Beendigung wird das Verzeichnis bereinigt (`try/finally`)
-- Kann per `--staging-dir` angepasst werden
+- Maximum size: 10 GB (configurable)
+- Cleaned up after each successful batch
+- Guaranteed cleanup on app exit via `try/finally`
+- Customizable via `--staging-dir`
 
-### SQLite WAL-Modus
+### SQLite WAL Mode
 
-Die Datenbank nutzt den WAL-Modus (Write-Ahead Logging) für maximale Zuverlässigkeit:
-- Checkpoints alle 500 verarbeiteten Dateien
-- Checkpoint beim App-Beenden
-- Kein Datenverlust bei unerwartetem Abbruch
+The database uses WAL mode (Write-Ahead Logging) for maximum reliability:
+- Checkpoints every 500 processed files
+- Checkpoint on app exit
+- No data loss on unexpected termination

@@ -2,15 +2,83 @@
 
 All notable changes to iCloudPhotonator will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] — 2026-04-04
 
 ### Added
-- Initial project scaffolding and Python backend setup
-- Project specification document (v0.1.0)
-- README with badges, dependency documentation, and license info
-- File scanner and discovery engine with Live Photo pair detection
-- State machine and persistent job engine (SQLite-backed)
-- CHANGELOG tracking
+- Complete UI redesign: modern flat design with dark/light mode support
+- Internationalization: English (default) + German
+- Settings dialog: configurable batch sizes, cooldowns, restart intervals
+- Step-by-step onboarding wizard with permission checks
+
+### Improved
+- Smart escalation: 4-level automatic recovery (pause → longer pause → Photos restart → manual)
+- Conservative throttling: smaller batches, longer cooldowns for stability
+- Graceful Photos restart: clean quit with wait instead of force-kill
+- Proactive Photos restart every N imports to prevent instability
+- Cooldown optimization: skip cooldown for duplicate-only batches
+
+### Fixed
+- Escalation fix: only trigger on real Photos errors, not duplicates
+- Staging cleanup: guaranteed cleanup via try/finally
+- Oversized file handling: files larger than staging limit are skipped gracefully
+
+## [0.3.0-beta] — 2026-04-03
+
+### Improved
+- Conservative throttling: max batch size reduced to 20, cooldowns increased (60s between batches, 180s extended cooldown) for more stable imports with large archives
+- Graceful Photos restart: Photos.app is cleanly quit instead of force-killed, with up to 60s wait for proper shutdown
+- Proactive Photos restart: Photos is automatically restarted every 500 successful imports to prevent memory leaks and instability
+- 4-level escalation: automatic recovery for Photos issues (2 min pause → 5 min pause → Photos restart → manual intervention)
+
+### Fixed
+- Staging cleanup guaranteed: try/finally ensures staged files are always cleaned up, even on errors
+- Oversized files: files exceeding the staging limit are skipped instead of blocking the entire import
+
+## [0.2.1-beta] — 2026-03-31
+
+### Improved
+- Auto-restart Photos.app: Photos is automatically restarted on consecutive import failures
+
+## [0.2.0-beta] — 2026-03-29
+
+### Added
+- Network detection: network unavailability is detected and distinguished from silent failures
+- Consecutive batch failure detection: automatic retry logic on consecutive failures
+- Cumulative staging count: transparent display of total staged files
+- Source folder validation: checks if source folder exists and is readable
+- Photos preflight: automatic pre-check of Photos environment (permissions, library, iCloud)
+- Automation permission with recovery loop: repeated checks instead of silent failure
+- Retry errors: failed imports can be retried selectively
+- Media validation: magic bytes check before import
+
+### Improved
+- Duplicate handling: duplicates and missing staging files treated as skip instead of error
+- Batch minimum raised to 10: adaptive batching now reduces to minimum 10 files on errors (previously 1)
+
+## [0.1.1-beta] — 2026-03-27
+
+### Improved
+- Photos auto-recovery: automatic recovery with window detection
+- Preflight checks: Photos readiness check before import
+- Import timeout control: timeout-based recovery for hanging imports
+- Job count synchronization: correct counters on resume after interruption
+- Error diagnostics: improved exception chains for better error tracing
+
+## [0.1.0-beta] — 2026-03-21
+
+### Added
+- Scan → Staging → Dedup → Import pipeline: complete multi-stage workflow
+- GUI with customtkinter: desktop interface with dark mode support
+- CLI with click: command-line interface with all options
+- Adaptive batching: ThrottleController dynamically adjusts batch size (5–50 files)
+- SQLite persistence: WAL mode for reliable data storage
+- Live Photo detection: photo/video pairs are automatically recognized
+- Network resilience: retry with exponential backoff, automatic pause on connection loss
+- Pause/Resume/Cancel: full control during scan and import
+- Auto-album: album is automatically named after source folder
+- Library selection: target library selectable in GUI or CLI
+- Permission onboarding: guided dialog on first launch
+- PyInstaller bundling: native macOS .app
+- 215+ tests: comprehensive test suite

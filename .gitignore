@@ -8,6 +8,7 @@ dist/
 build/
 out/
 *.egg-info/
+.eggs/
 
 # IDE
 .idea/
@@ -32,3 +33,7 @@ npm-debug.log*
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# macOS build artifacts
+*.dmg
+*.app
