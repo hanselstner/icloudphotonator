@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from .i18n import t
 from .db import Database
 from .dedup import DeduplicationEngine
 from .importer import PhotoImporter
@@ -111,7 +112,7 @@ class ImportOrchestrator:
             else:
                 if job.state == JobState.IDLE:
                     job.start(source_path)
-                    self._emit_log(f"Scanne Quelle: {source_path}")
+                    self._emit_log(t("log.scanning_source", path=source_path))
                 scan_task = asyncio.create_task(self._scan_and_signal(job, source_path, scan_done))
                 await self._wait_for_scan_buffer(job, scan_done)
 
@@ -132,21 +133,21 @@ class ImportOrchestrator:
                     job.complete()
                     stats = self.get_job_stats(job.job_id)
                     self._emit_log(
-                        "Import abgeschlossen: "
-                        f"{stats.get('imported', 0)} importiert, "
-                        f"{stats.get('skipped', 0)} übersprungen, "
-                        f"{stats.get('errors', 0)} Fehler"
+                        t("log.import_summary",
+                          imported=stats.get('imported', 0),
+                          skipped=stats.get('skipped', 0),
+                          errors=stats.get('errors', 0))
                     )
                     error_files = self.db.get_error_files(job.job_id, limit=21)
                     if error_files:
-                        self._emit_log(f"⚠️ {stats.get('errors', len(error_files))} Dateien konnten nicht importiert werden:")
+                        self._emit_log(t("log.error_files_header", count=stats.get('errors', len(error_files))))
                         for ef in error_files[:20]:
                             path_name = Path(ef["path"]).name
-                            msg = ef.get("error_message") or "Unbekannter Fehler"
-                            self._emit_log(f"  ❌ {path_name}: {msg}")
+                            msg = ef.get("error_message") or t("log.unknown_error")
+                            self._emit_log(t("log.error_file_entry", name=path_name, message=msg))
                         if len(error_files) > 20:
                             remaining = stats.get("errors", len(error_files)) - 20
-                            self._emit_log(f"  ... und {remaining} weitere")
+                            self._emit_log(t("log.error_files_more", remaining=remaining))
 
             self._sync_job_counts(job)
             self._notify_progress(self.get_job_stats(job.job_id))
@@ -182,31 +183,32 @@ class ImportOrchestrator:
 
         if job.state == JobState.PAUSED:
             job.resume()
-            self._emit_log("Import wird fortgesetzt.")
+            self._emit_log(t("log.resume_import"))
 
         stats = self.db.count_files_by_status(job.job_id)
         self._emit_log(
-            f"Fortsetzen: {stats.get('pending', 0)} ausstehend, "
-            f"{stats.get('imported', 0)} importiert, "
-            f"{stats.get('error', 0)} Fehler, "
-            f"{stats.get('skipped_duplicate', 0)} übersprungen"
+            t("log.resume_status",
+              pending=stats.get('pending', 0),
+              imported=stats.get('imported', 0),
+              errors=stats.get('error', 0),
+              skipped=stats.get('skipped_duplicate', 0))
         )
 
         actual_count = self.db.count_files(job.job_id)
         if actual_count == 0:
             self._set_job_state(job, JobState.SCANNING, "resume_scan", str(source_path))
-            self._emit_log(f"Scanne Quelle: {source_path}")
+            self._emit_log(t("log.scanning_source", path=source_path))
             await self._scan_phase(job, source_path)
             return
 
         # Mark files stuck in IMPORTING as error (they caused a hang last time)
         stuck_importing = self._mark_stuck_importing(job.job_id)
         if stuck_importing:
-            self._emit_log(f"{stuck_importing} Dateien waren beim letzten Import hängengeblieben und werden als Fehler markiert.")
+            self._emit_log(t("log.stuck_files", count=stuck_importing))
 
         recovered_files = self._recover_file_statuses(job.job_id)
         if recovered_files:
-            self._emit_log(f"Stelle {recovered_files} Dateien für die Wiederaufnahme erneut an.")
+            self._emit_log(t("log.recover_files", count=recovered_files))
 
         if self.db.get_pending_files(job.job_id, limit=1):
             self._set_job_state(job, JobState.DEDUPLICATING, "resume_pending", "resume existing files")
@@ -230,7 +232,7 @@ class ImportOrchestrator:
             JobState.VERIFYING,
         }:
             self._active_job.pause()
-            self._emit_log("Import pausiert.")
+            self._emit_log(t("log.import_paused_orch"))
 
     def resume(self):
         """Resume the import."""
@@ -239,11 +241,11 @@ class ImportOrchestrator:
         self._paused_thread.set()
         if self._active_job and self._active_job.state == JobState.PAUSED:
             self._active_job.resume()
-            self._emit_log("Import fortgesetzt.")
+            self._emit_log(t("log.import_resumed_orch"))
 
     async def restart_photos(self) -> None:
         """Quit and relaunch Photos.app, then reset stuck importing files."""
-        self._emit_log("🔄 Photos.app wird beendet (graceful)...")
+        self._emit_log(t("log.photos_quit"))
         try:
             subprocess.run(
                 ["osascript", "-e", 'tell application "Photos" to quit'],
@@ -257,22 +259,22 @@ class ImportOrchestrator:
         for i in range(12):
             result = subprocess.run(["pgrep", "-x", "Photos"], capture_output=True)
             if result.returncode != 0:
-                self._emit_log("✅ Photos.app beendet.")
+                self._emit_log(t("log.photos_quit_done"))
                 break
-            self._emit_log(f"⏳ Warte auf Photos.app... ({(i + 1) * 5}s)")
+            self._emit_log(t("log.photos_waiting", seconds=(i + 1) * 5))
             await asyncio.sleep(5)
         else:
-            self._emit_log("⚠️ Photos reagiert nicht, force-kill...")
+            self._emit_log(t("log.photos_force_kill"))
             subprocess.run(["pkill", "-9", "-x", "Photos"], capture_output=True)
             await asyncio.sleep(3)
 
         # Wait before restarting
-        self._emit_log("⏳ Warte 10 Sekunden vor Neustart...")
+        self._emit_log(t("log.photos_wait_before_restart"))
         await asyncio.sleep(10)
 
         # Restart
         subprocess.run(["open", "-a", "Photos"])
-        self._emit_log("⏳ Warte 60 Sekunden bis Photos bereit ist...")
+        self._emit_log(t("log.photos_wait_after_restart"))
         await asyncio.sleep(60)
 
         # Reset files stuck in importing state back to pending
@@ -280,7 +282,7 @@ class ImportOrchestrator:
             "UPDATE files SET status='pending', error_message=NULL WHERE status='importing'"
         )
         self.db._connection.commit()
-        self._emit_log("✅ Photos.app neu gestartet und bereit.")
+        self._emit_log(t("log.photos_ready"))
 
     def cancel(self):
         """Cancel the import."""
@@ -290,7 +292,7 @@ class ImportOrchestrator:
         self._cancel_thread.set()
         if self._active_job and self._active_job.state not in {JobState.CANCELLED, JobState.COMPLETED}:
             self._active_job.cancel()
-            self._emit_log("Import gestoppt.")
+            self._emit_log(t("log.import_cancelled"))
 
     def stop(self):
         """Compatibility alias for UI bridge stop handling."""
@@ -334,14 +336,14 @@ class ImportOrchestrator:
         if self._cancelled or self._active_job is None or self._network_pause_requested:
             return
         self._network_pause_requested = True
-        self._emit_log("Network connection lost, pausing import")
+        self._emit_log(t("log.network_lost"))
         self.pause()
 
     def _on_network_restored(self) -> None:
         if self._cancelled or self._active_job is None or not self._network_pause_requested:
             return
         self._network_pause_requested = False
-        self._emit_log("Network connection restored, resuming import")
+        self._emit_log(t("log.network_restored"))
         self.resume()
 
     def _stop_network_monitor(self) -> None:
@@ -425,7 +427,7 @@ class ImportOrchestrator:
             self._notify_progress(stats)
 
             if discovered["count"] % self.SCAN_PROGRESS_LOG_INTERVAL == 0:
-                self._emit_log(f"Scanne... {discovered['count']} Dateien gefunden.")
+                self._emit_log(t("log.scanning_progress", count=discovered['count']))
 
         while not queue.empty():
             try:
@@ -463,7 +465,7 @@ class ImportOrchestrator:
             "scan_complete",
             f"files={len(manifest.files)}; network_source={manifest.is_network_source}",
         )
-        self._emit_log(f"Scan abgeschlossen: {len(manifest.files)} Dateien gefunden.")
+        self._emit_log(t("log.scan_complete", count=len(manifest.files)))
         if job.state == JobState.SCANNING:
             self._transition_job(job, JobState.DEDUPLICATING, "dedup_ready")
         self._notify_progress(self.get_job_stats(job.job_id))
@@ -473,11 +475,11 @@ class ImportOrchestrator:
         # Run full preflight before starting import
         preflight_result = await asyncio.to_thread(self.preflight.run_preflight)
         if preflight_result.passed:
-            self._emit_log("✅ Preflight bestanden.")
+            self._emit_log(t("log.preflight_passed"))
         else:
             for error in preflight_result.errors:
-                self._emit_log(f"⚠️ Preflight: {error}")
-            self._emit_log("⚠️ Preflight-Checks nicht bestanden — Import wird trotzdem versucht.")
+                self._emit_log(t("log.preflight_warning", error=error))
+            self._emit_log(t("log.preflight_failed"))
 
         self._sync_job_counts(job)
         self._notify_progress(self.get_job_stats(job.job_id))
@@ -503,12 +505,12 @@ class ImportOrchestrator:
                     else JobState.IMPORTING
                 )
                 self._transition_job(job, next_state, "staging" if next_state == JobState.STAGING else "importing")
-                phase_label = "Staging vorbereitet." if next_state == JobState.STAGING else "Import gestartet."
+                phase_label = t("log.staging_prepared") if next_state == JobState.STAGING else t("log.import_phase_started")
                 self._emit_log(phase_label)
 
             # Skip batch if network is down to avoid marking files as errors
             if self._network_monitor is not None and not self._network_monitor.is_available:
-                self._emit_log("⏸️ Netzwerk nicht verfügbar — Batch wird übersprungen.")
+                self._emit_log(t("log.network_skip_batch"))
                 await self._wait_if_paused()
                 continue
 
@@ -522,7 +524,7 @@ class ImportOrchestrator:
 
             if job.state == JobState.STAGING and staged_pairs:
                 self._transition_job(job, JobState.IMPORTING, "importing")
-                self._emit_log("Staging abgeschlossen. Import startet.")
+                self._emit_log(t("log.staging_done"))
 
             if not staged_pairs:
                 self.throttle.report_failure(len(file_infos))
@@ -545,7 +547,7 @@ class ImportOrchestrator:
                 if not is_valid:
                     row = row_by_path.get(str(file_info.path))
                     if row:
-                        self.db.update_file_status(row["id"], FileStatus.ERROR, f"Korrupte Datei: {error_msg}")
+                        self.db.update_file_status(row["id"], FileStatus.ERROR, t("error.corrupt_file", message=error_msg))
                         self.db.log_action(job.job_id, row["id"], "validation_error", error_msg)
                         self._emit_log(f"⚠️ {file_info.path.name}: {error_msg}")
                 else:
@@ -564,9 +566,9 @@ class ImportOrchestrator:
                 if self.staging._requires_staging(file_info.path) and staged_path == file_info.path:
                     row = row_by_path.get(str(file_info.path))
                     if row:
-                        self.db.update_file_status(row["id"], FileStatus.ERROR, "Staging fehlgeschlagen: Netzwerkdatei wurde nicht lokal kopiert")
-                        self.db.log_action(job.job_id, row["id"], "staging_error", "Netzwerkdatei nicht gestaged")
-                        self._emit_log(f"⚠️ {file_info.path.name}: Netzwerkdatei nicht gestaged — übersprungen")
+                        self.db.update_file_status(row["id"], FileStatus.ERROR, t("error.staging_failed"))
+                        self.db.log_action(job.job_id, row["id"], "staging_error", t("error.network_file_not_staged"))
+                        self._emit_log(f"⚠️ {file_info.path.name}: {t('error.network_file_not_staged')}")
                 else:
                     safe_staged_pairs.append((file_info, staged_path))
             staged_pairs = safe_staged_pairs
@@ -589,13 +591,13 @@ class ImportOrchestrator:
             try:
                 if not await asyncio.to_thread(self.preflight.ensure_photos_responsive):
                     if not await asyncio.to_thread(self.preflight.check_automation_permission):
-                        self._emit_log("❌ Automation-Berechtigung fehlt!")
+                        self._emit_log(t("log.automation_missing"))
                         break
-                    self._emit_log("⚠️ Photos.app reagiert nicht — Batch wird als Fehler markiert.")
+                    self._emit_log(t("log.photos_not_responding"))
                     for file_info, _ in staged_pairs:
                         row = staged_row_by_path[str(file_info.path)]
-                        self.db.update_file_status(row["id"], FileStatus.ERROR, "Photos.app reagiert nicht")
-                        self.db.log_action(job.job_id, row["id"], "import_error", "Photos.app reagiert nicht")
+                        self.db.update_file_status(row["id"], FileStatus.ERROR, t("error.photos_not_responding"))
+                        self.db.log_action(job.job_id, row["id"], "import_error", t("error.photos_not_responding"))
                     self._sync_job_counts(job)
                     self._notify_progress(self.get_job_stats(job.job_id))
                     continue
@@ -614,7 +616,7 @@ class ImportOrchestrator:
 
                 # If the batch crashed (no report generated), retry each file individually
                 if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
-                    self._emit_log(f"Batch fehlgeschlagen, versuche {len(staged_paths)} Dateien einzeln...")
+                    self._emit_log(t("log.batch_failed_retry", count=len(staged_paths)))
                     for staged_path in staged_paths:
                         if self._cancelled:
                             break
@@ -645,7 +647,7 @@ class ImportOrchestrator:
                                     'SELECT status FROM files WHERE id = ?', (file_row['id'],)
                                 ).fetchone()
                                 if current and current[0] == FileStatus.IMPORTING.value:
-                                    self.db.update_file_status(file_row['id'], FileStatus.ERROR, error_message=f'Import gescheitert: {original_info.path.name}')
+                                    self.db.update_file_status(file_row['id'], FileStatus.ERROR, error_message=t('error.import_failed', name=original_info.path.name))
 
                     # Safety net: mark any files still in importing as error
                     for file_info, _ in staged_pairs:
@@ -655,7 +657,7 @@ class ImportOrchestrator:
                                 'SELECT status FROM files WHERE id = ?', (row['id'],)
                             ).fetchone()
                             if current_status and current_status[0] == FileStatus.IMPORTING.value:
-                                self.db.update_file_status(row['id'], FileStatus.ERROR, error_message=f'Import gescheitert: {file_info.path.name}')
+                                self.db.update_file_status(row['id'], FileStatus.ERROR, error_message=t('error.import_failed', name=file_info.path.name))
 
                     self._sync_job_counts(job)
                     self._notify_progress(self.get_job_stats(job.job_id))
@@ -677,9 +679,10 @@ class ImportOrchestrator:
                     # Only count real imports for throttle (drives extended cooldown)
                     self.throttle.report_success(batch_stats["imported"])
                 self._emit_log(
-                    f"✅ {batch_stats['imported']} importiert, "
-                    f"⏭️ {batch_stats['skipped']} übersprungen, "
-                    f"❌ {batch_stats['errors']} Fehler"
+                    t("log.batch_result",
+                      imported=batch_stats['imported'],
+                      skipped=batch_stats['skipped'],
+                      errors=batch_stats['errors'])
                 )
                 self._notify_progress(self.get_job_stats(job.job_id))
             finally:
@@ -717,16 +720,16 @@ class ImportOrchestrator:
             # Preventive Photos restart after N successful imports
             if self._imports_since_restart >= self.RESTART_PHOTOS_EVERY:
                 self._emit_log(
-                    f"🔄 Präventiver Photos-Neustart nach {self._imports_since_restart} Imports..."
+                    t("log.preventive_restart", count=self._imports_since_restart)
                 )
                 await self.restart_photos()
                 self._imports_since_restart = 0
-                self._emit_log("⏳ Warte 120 Sekunden nach Neustart...")
+                self._emit_log(t("log.preventive_wait"))
                 await asyncio.sleep(120)
-                self._emit_log("▶️ Weiter geht's!")
+                self._emit_log(t("log.continue"))
 
             if fatal_permission_error:
-                self._emit_log("❌ Die Automation-Berechtigung für Fotos fehlt. Import wird gestoppt.")
+                self._emit_log(t("log.automation_permission_fatal"))
                 self.cancel()
                 self._emit_permission_error()
                 break
@@ -778,9 +781,7 @@ class ImportOrchestrator:
             return True
         else:
             # Level 3+: manual pause
-            self._emit_log(
-                "❌ Photos.app reagiert nach automatischen Maßnahmen nicht. Bitte manuell prüfen."
-            )
+            self._emit_log(t("log.manual_pause"))
             self.db.log_action(job.job_id, None, "auto_pause", "escalation_level=3, manual pause")
             self._pause_reason = "photos_unresponsive"
             self.pause()
@@ -794,7 +795,7 @@ class ImportOrchestrator:
             duration_label = f"{minutes} Min {remaining_secs}s"
         else:
             duration_label = f"{minutes} Minuten" if minutes != 1 else "1 Minute"
-        self._emit_log(f"⏸️ Photos macht Probleme. Pausiere {duration_label}...")
+        self._emit_log(t("log.auto_pause", duration=duration_label))
 
         self._pause_reason = "auto_pause"
         self.pause()
@@ -809,13 +810,13 @@ class ImportOrchestrator:
             elapsed += wait_step
             remaining = seconds - elapsed
             if remaining > 0 and not self._cancelled:
-                self._emit_log(f"⏸️ Noch {remaining}s Pause...")
+                self._emit_log(t("log.auto_pause_remaining", seconds=remaining))
                 # Push progress so UI sees countdown
                 if self._active_job:
                     self._notify_progress(self.get_job_stats(self._active_job.job_id))
 
         if not self._cancelled:
-            self._emit_log("▶️ Versuche es erneut...")
+            self._emit_log(t("log.auto_resume"))
             self.resume()
 
 
@@ -1108,7 +1109,7 @@ class ImportOrchestrator:
                 SET status = ?, error_message = ?
                 WHERE job_id = ? AND status = ?
                 """,
-                (FileStatus.ERROR.value, "Import wurde durch App-Neustart unterbrochen", job_id, FileStatus.IMPORTING.value),
+                (FileStatus.ERROR.value, t("error.stuck_interrupted"), job_id, FileStatus.IMPORTING.value),
             )
         return int(cursor.rowcount or 0)
 

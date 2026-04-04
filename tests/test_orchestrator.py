@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from icloudphotonator.i18n import load_locale
 from icloudphotonator.db import Database
 from icloudphotonator.importer import PhotoImporter
 from icloudphotonator.job import Job
@@ -15,6 +16,11 @@ from icloudphotonator.scanner import FileInfo, MediaType, ScanCancelledError
 from icloudphotonator.staging import StagingManager
 from icloudphotonator.state import FileStatus, JobState
 from icloudphotonator.throttle import ThrottleController
+
+
+@pytest.fixture(autouse=True)
+def _use_german_locale() -> None:
+    load_locale("de")
 
 
 @pytest.fixture(autouse=True)

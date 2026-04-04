@@ -21,13 +21,13 @@ except ModuleNotFoundError as exc:
 else:
     _UI_IMPORT_ERROR = None
 
+from icloudphotonator.i18n import t
 from icloudphotonator.importer import find_photo_libraries
 from icloudphotonator.persistence import APP_DIR
 
 from .bridge import BackendBridge
 
 APP_TITLE = "iCloudPhotonator"
-APP_SUBTITLE = "Foto-Migration für Apple Fotos"
 REPOSITORY_URL = "https://github.com/hanselstner/icloudphototnator"
 ACCENT_BLUE = "#007AFF"
 
@@ -41,30 +41,17 @@ SUCCESS = "#34C759"
 WARNING = "#FF9500"
 ERROR = "#FF3B30"
 
-DEFAULT_LIBRARY_OPTION = "Standard (Systemmediathek)"
 AUTOMATION_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
-PERMISSION_DIALOG_TITLE = "Berechtigung erforderlich"
-PERMISSION_DIALOG_TEXT = (
-    "iCloudPhotonator benötigt die Automation-Berechtigung, um Medien an Fotos.app zu senden.\n\n"
-    "Bitte erlaube der App unter Systemeinstellungen → Datenschutz & Sicherheit → Automation den Zugriff auf Fotos.app.\n\n"
-    "Möchtest du die Systemeinstellungen jetzt öffnen?"
-)
 ONBOARDING_CONFIG_PATH = APP_DIR / "config.json"
-ONBOARDING_DIALOG_TITLE = "Willkommen bei iCloudPhotonator"
-ONBOARDING_DIALOG_TEXT = (
-    "Für den Import Ihrer Fotos benötigt iCloudPhotonator folgende Berechtigungen:\n\n"
-    "1️⃣  Automation (Fotos-App)\n"
-    "     Erlaubt der App, Fotos in die Fotos-App zu importieren.\n\n"
-    "2️⃣  Fotomediathek\n"
-    "     Erlaubt der App, auf Ihre Fotomediathek zuzugreifen.\n\n"
-    "macOS wird Sie gleich nach diesen Berechtigungen fragen.\n"
-    "Bitte bestätigen Sie jeweils mit „OK“."
-)
+PERMISSION_DIALOG_TITLE = "dialog.permission_title"  # i18n key
+PERMISSION_DIALOG_TEXT = "dialog.permission_message"  # i18n key
+ONBOARDING_DIALOG_TITLE = "onboarding.title"  # i18n key
+ONBOARDING_DIALOG_TEXT = "onboarding.message"  # i18n key
 
 
 def build_library_options(libraries: list[Path]) -> dict[str, Path | None]:
     """Build display labels for selectable Photos libraries."""
-    options: dict[str, Path | None] = {DEFAULT_LIBRARY_OPTION: None}
+    options: dict[str, Path | None] = {t("app.default_library"): None}
     for path in libraries:
         options[f"{path.stem} — {path}"] = path
     return options
@@ -85,7 +72,7 @@ def _open_automation_settings() -> None:
 def _prompt_for_automation_permission() -> bool:
     if messagebox is None:
         return False
-    return bool(messagebox.askyesno(PERMISSION_DIALOG_TITLE, PERMISSION_DIALOG_TEXT, icon="warning"))
+    return bool(messagebox.askyesno(t(PERMISSION_DIALOG_TITLE), t(PERMISSION_DIALOG_TEXT), icon="warning"))
 
 
 def _check_automation_permission() -> bool:
@@ -158,33 +145,31 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
 
         def _show_onboarding(self) -> None:
             if not _check_onboarding_done():
-                messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
+                messagebox.showinfo(t(ONBOARDING_DIALOG_TITLE), t(ONBOARDING_DIALOG_TEXT))
                 _mark_onboarding_done()
 
             while True:
-                self.add_log("Prüfe Automation-Berechtigung...")
+                self.add_log(t("log.checking_automation"))
                 if _check_automation_permission():
-                    self.add_log("✅ Automation-Berechtigung erteilt.")
+                    self.add_log(t("log.automation_granted"))
                     break
 
-                self.add_log("⚠️ Automation-Berechtigung nicht erteilt.")
+                self.add_log(t("log.automation_not_granted"))
                 open_prefs = messagebox.askyesno(
-                    "Berechtigung fehlt",
-                    "iCloudPhotonator benötigt die Automation-Berechtigung für Fotos.\n\n"
-                    "Möchten Sie die Systemeinstellungen öffnen, um die Berechtigung zu erteilen?",
+                    t("dialog.permission_missing_title"),
+                    t("dialog.permission_missing_message"),
                     icon="warning",
                 )
                 if not open_prefs:
-                    self.add_log("⚠️ Automation-Berechtigung abgelehnt — Funktionen eingeschränkt.")
+                    self.add_log(t("log.automation_declined"))
                     break
 
                 subprocess.Popen(
                     ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
                 )
                 messagebox.showinfo(
-                    "Berechtigung erteilen",
-                    "Bitte erteilen Sie die Berechtigung in den Systemeinstellungen.\n\n"
-                    "Klicken Sie OK, wenn Sie fertig sind.",
+                    t("dialog.grant_permission_title"),
+                    t("dialog.grant_permission_message"),
                 )
 
         def _ensure_source_access_if_needed(self) -> None:
@@ -195,17 +180,14 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
             source_path = incomplete_jobs[0].get("source_path", "")
             if not source_path or _check_source_access(source_path):
                 return
-            self.add_log(f"⚠️ Quellordner nicht erreichbar: {source_path}")
+            self.add_log(t("log.source_not_reachable", path=source_path))
             messagebox.showwarning(
-                "Quellordner nicht erreichbar",
-                (
-                    f"Der Quellordner des letzten Imports ist nicht erreichbar:\n{source_path}\n\n"
-                    "Bitte wählen Sie den Ordner erneut aus, damit macOS die Zugriffsberechtigung erteilt."
-                ),
+                t("dialog.source_not_reachable_title"),
+                t("dialog.source_not_reachable_message", path=source_path),
             )
-            chosen = filedialog.askdirectory(title="Quellordner erneut auswählen")
+            chosen = filedialog.askdirectory(title=t("dialog.source_rechosen_title"))
             if chosen:
-                self.add_log(f"Quellordner neu gewählt: {chosen}")
+                self.add_log(t("log.source_rechosen", path=chosen))
 
         def _run_startup_sequence(self) -> None:
             self._show_onboarding()
@@ -285,9 +267,9 @@ else:
             self._last_stats: dict[str, int] = {}
             self._last_error_count: int = 0
             self._last_job_id: str | None = None
-            self.path_var = tk.StringVar(value="No folder selected")
+            self.path_var = tk.StringVar(value=t("app.no_folder"))
             self.album_var = tk.StringVar(value="")
-            self.library_var = tk.StringVar(value=DEFAULT_LIBRARY_OPTION)
+            self.library_var = tk.StringVar(value=t("app.default_library"))
             self._library_options: dict[str, Path | None] = {}
             self._bridge = BackendBridge()
             self._bridge.set_callbacks(
@@ -300,8 +282,8 @@ else:
 
             self.protocol("WM_DELETE_WINDOW", self._on_close)
             self._build_ui()
-            self._set_status("Ready")
-            self.add_log("Application ready.")
+            self._set_status(t("app.ready"))
+            self.add_log(t("app.application_ready"))
             self.after(0, self._run_startup_sequence)
 
         def _run_startup_sequence(self) -> None:
@@ -318,48 +300,43 @@ else:
             source_path = incomplete_jobs[0].get("source_path", "")
             if not source_path or _check_source_access(source_path):
                 return
-            self.add_log(f"⚠️ Quellordner nicht erreichbar: {source_path}")
+            self.add_log(t("log.source_not_reachable", path=source_path))
             messagebox.showwarning(
-                "Quellordner nicht erreichbar",
-                (
-                    f"Der Quellordner des letzten Imports ist nicht erreichbar:\n{source_path}\n\n"
-                    "Bitte wählen Sie den Ordner erneut aus, damit macOS die Zugriffsberechtigung erteilt."
-                ),
+                t("dialog.source_not_reachable_title"),
+                t("dialog.source_not_reachable_message", path=source_path),
             )
-            chosen = filedialog.askdirectory(title="Quellordner erneut auswählen")
+            chosen = filedialog.askdirectory(title=t("dialog.source_rechosen_title"))
             if chosen:
-                self.add_log(f"Quellordner neu gewählt: {chosen}")
+                self.add_log(t("log.source_rechosen", path=chosen))
 
         def _show_onboarding(self) -> None:
             """Check Automation permission on every launch; show intro only on first run."""
             if not _check_onboarding_done():
-                messagebox.showinfo(ONBOARDING_DIALOG_TITLE, ONBOARDING_DIALOG_TEXT)
+                messagebox.showinfo(t(ONBOARDING_DIALOG_TITLE), t(ONBOARDING_DIALOG_TEXT))
                 _mark_onboarding_done()
 
             while True:
-                self.add_log("Prüfe Automation-Berechtigung...")
+                self.add_log(t("log.checking_automation"))
                 if _check_automation_permission():
-                    self.add_log("✅ Automation-Berechtigung erteilt.")
+                    self.add_log(t("log.automation_granted"))
                     break
 
-                self.add_log("⚠️ Automation-Berechtigung nicht erteilt.")
+                self.add_log(t("log.automation_not_granted"))
                 open_prefs = messagebox.askyesno(
-                    "Berechtigung fehlt",
-                    "iCloudPhotonator benötigt die Automation-Berechtigung für Fotos.\n\n"
-                    "Möchten Sie die Systemeinstellungen öffnen, um die Berechtigung zu erteilen?",
+                    t("dialog.permission_missing_title"),
+                    t("dialog.permission_missing_message"),
                     icon="warning",
                 )
                 if not open_prefs:
-                    self.add_log("⚠️ Automation-Berechtigung abgelehnt — Funktionen eingeschränkt.")
+                    self.add_log(t("log.automation_declined"))
                     break
 
                 subprocess.Popen(
                     ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"],
                 )
                 messagebox.showinfo(
-                    "Berechtigung erteilen",
-                    "Bitte erteilen Sie die Berechtigung in den Systemeinstellungen.\n\n"
-                    "Klicken Sie OK, wenn Sie fertig sind.",
+                    t("dialog.grant_permission_title"),
+                    t("dialog.grant_permission_message"),
                 )
 
         def _build_ui(self) -> None:
@@ -413,13 +390,13 @@ else:
             row1 = ctk.CTkFrame(inner, fg_color="transparent")
             row1.pack(fill="x", pady=(0, 10))
             ctk.CTkLabel(
-                row1, text="Source Folder", font=ctk.CTkFont(size=13, weight="bold"),
+                row1, text=t("app.source_folder"), font=ctk.CTkFont(size=13, weight="bold"),
                 width=110, anchor="w",
             ).pack(side="left")
             self.path_entry = ctk.CTkEntry(row1, textvariable=self.path_var, state="disabled")
             self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
             self.browse_btn = ctk.CTkButton(
-                row1, text="Browse", width=80, height=28, corner_radius=8,
+                row1, text=t("app.browse"), width=80, height=28, corner_radius=8,
                 fg_color="transparent", border_width=1, border_color=ACCENT_BLUE,
                 text_color=ACCENT_BLUE, hover_color=("#e8f0fe", "#1a3a5c"),
                 command=self._browse_folder,
@@ -430,16 +407,16 @@ else:
             row2 = ctk.CTkFrame(inner, fg_color="transparent")
             row2.pack(fill="x", pady=(0, 10))
             ctk.CTkLabel(
-                row2, text="Import Album", font=ctk.CTkFont(size=13, weight="bold"),
+                row2, text=t("app.import_album"), font=ctk.CTkFont(size=13, weight="bold"),
                 width=110, anchor="w",
             ).pack(side="left")
             self.album_entry = ctk.CTkEntry(
                 row2, textvariable=self.album_var,
-                placeholder_text="Album name (empty = no album)",
+                placeholder_text=t("app.album_placeholder"),
             )
             self.album_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
             self.album_auto_btn = ctk.CTkButton(
-                row2, text="Auto", width=60, height=28, corner_radius=8,
+                row2, text=t("app.auto"), width=60, height=28, corner_radius=8,
                 fg_color="transparent", border_width=1, border_color=TEXT_SECONDARY,
                 text_color=TEXT_SECONDARY, hover_color=("#e8e8ed", "#3a3a3c"),
                 command=self._auto_fill_album,
@@ -450,12 +427,12 @@ else:
             row3 = ctk.CTkFrame(inner, fg_color="transparent")
             row3.pack(fill="x")
             ctk.CTkLabel(
-                row3, text="Target Library", font=ctk.CTkFont(size=13, weight="bold"),
+                row3, text=t("app.target_library"), font=ctk.CTkFont(size=13, weight="bold"),
                 width=110, anchor="w",
             ).pack(side="left")
             self.library_combo = ctk.CTkComboBox(
                 row3, variable=self.library_var,
-                values=[DEFAULT_LIBRARY_OPTION], state="readonly",
+                values=[t("app.default_library")], state="readonly",
             )
             self.library_combo.pack(side="left", fill="x", expand=True)
             self._refresh_library_options()
@@ -466,7 +443,7 @@ else:
             current = self.library_var.get()
             self._library_options = options
             self.library_combo.configure(values=labels)
-            self.library_var.set(current if current in options else DEFAULT_LIBRARY_OPTION)
+            self.library_var.set(current if current in options else t("app.default_library"))
 
         def _get_selected_library(self) -> Path | None:
             return self._library_options.get(self.library_var.get())
@@ -492,10 +469,16 @@ else:
             frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
             frame.pack(fill="x", pady=(0, 16))
             frame.grid_columnconfigure((0, 1, 2), weight=1)
-            labels = ["Discovered", "Imported", "Staged", "Duplicates", "Errors", "Remaining"]
+            labels = [
+                (t("stats.discovered"), "discovered"),
+                (t("stats.imported"), "imported"),
+                (t("stats.staged"), "staged"),
+                (t("stats.duplicates"), "duplicates"),
+                (t("stats.errors"), "errors"),
+                (t("stats.remaining"), "remaining"),
+            ]
             self.stat_cards: dict[str, StatsCard] = {}
-            for index, label in enumerate(labels):
-                key = label.lower()
+            for index, (label, key) in enumerate(labels):
                 card = StatsCard(frame, label)
                 card.grid(row=index // 3, column=index % 3, padx=4, pady=4, sticky="ew")
                 self.stat_cards[key] = card
@@ -503,7 +486,7 @@ else:
         def _build_controls(self) -> None:
             # Restart Photos banner (hidden by default, shown above controls when needed)
             self.restart_photos_btn = ctk.CTkButton(
-                self.main_frame, text="Restart Photos & Continue",
+                self.main_frame, text=t("app.restart_photos"),
                 height=36, corner_radius=8,
                 fg_color=WARNING, hover_color="#E68600", text_color="#ffffff",
                 command=self._on_restart_photos,
@@ -515,27 +498,27 @@ else:
             self._controls_frame = ctrl_frame
 
             self.start_btn = ctk.CTkButton(
-                ctrl_frame, text="Start", height=36, corner_radius=8,
+                ctrl_frame, text=t("app.start"), height=36, corner_radius=8,
                 fg_color=SUCCESS, hover_color="#2DB84E",
                 command=self._on_start, state="disabled",
             )
             self.start_btn.grid(row=0, column=0, padx=(0, 4), sticky="ew")
             self.pause_btn = ctk.CTkButton(
-                ctrl_frame, text="Pause", height=36, corner_radius=8,
+                ctrl_frame, text=t("app.pause"), height=36, corner_radius=8,
                 fg_color="transparent", border_width=1, border_color=WARNING,
                 text_color=WARNING, hover_color=("#fff3e0", "#3a3020"),
                 command=self._on_pause, state="disabled",
             )
             self.pause_btn.grid(row=0, column=1, padx=4, sticky="ew")
             self.stop_btn = ctk.CTkButton(
-                ctrl_frame, text="Stop", height=36, corner_radius=8,
+                ctrl_frame, text=t("app.stop"), height=36, corner_radius=8,
                 fg_color="transparent", border_width=1, border_color=ERROR,
                 text_color=ERROR, hover_color=("#ffe8e6", "#3a2020"),
                 command=self._on_stop, state="disabled",
             )
             self.stop_btn.grid(row=0, column=2, padx=4, sticky="ew")
             self.retry_btn = ctk.CTkButton(
-                ctrl_frame, text="Retry", height=36, corner_radius=8,
+                ctrl_frame, text=t("app.retry"), height=36, corner_radius=8,
                 fg_color="transparent", border_width=1, border_color=ACCENT_BLUE,
                 text_color=ACCENT_BLUE, hover_color=("#e8f0fe", "#1a3a5c"),
                 command=self._on_retry_errors, state="disabled",
@@ -546,7 +529,7 @@ else:
             header = ctk.CTkFrame(self.main_frame, fg_color="transparent")
             header.pack(fill="x", pady=(0, 6))
             ctk.CTkLabel(
-                header, text="Activity Log", font=ctk.CTkFont(size=14, weight="bold"),
+                header, text=t("app.activity_log"), font=ctk.CTkFont(size=14, weight="bold"),
             ).pack(side="left")
             self.log_view = LogView(self.main_frame, height=120, corner_radius=8)
             self.log_view.pack(fill="both", expand=True)
@@ -565,7 +548,7 @@ else:
             ).pack(side="right")
 
         def _browse_folder(self) -> None:
-            path = filedialog.askdirectory(title="Quellordner auswählen")
+            path = filedialog.askdirectory(title=t("dialog.browse_title"))
             if not path:
                 return
             self._source_path = Path(path)
@@ -573,7 +556,7 @@ else:
             self._auto_fill_album()
             if not self._is_running:
                 self.start_btn.configure(state="normal")
-            self.add_log(f"Quellordner gewählt: {path}")
+            self.add_log(t("log.source_folder_chosen", path=path))
 
         def _auto_fill_album(self) -> None:
             if self._source_path:
@@ -592,16 +575,12 @@ else:
 
             job = incomplete_jobs[0]
             stats = job.get("stats", {})
-            source_path = str(job.get("source_path", "Unbekannter Ordner"))
+            source_path = str(job.get("source_path", ""))
             imported = stats.get("imported", 0)
             total = stats.get("total", 0)
             should_resume = messagebox.askyesno(
-                APP_TITLE,
-                (
-                    f"Unvollständiger Import gefunden:\n{source_path}\n\n"
-                    f"Fortschritt: {imported}/{total} Dateien importiert.\n\n"
-                    "Möchtest du den Import fortsetzen?"
-                ),
+                t("dialog.resume_title"),
+                t("dialog.resume_message", path=source_path, imported=imported, total=total),
                 icon="question",
             )
             if not should_resume:
@@ -617,7 +596,7 @@ else:
             self._source_path = Path(source_path)
             self._set_path_display(source_path)
             self._auto_fill_album()
-            self.add_log(f"Setze gespeicherten Import fort: {source_path}")
+            self.add_log(t("log.resume_saved_import", path=source_path))
             self._start_import_run(job_id=job["id"])
 
         def _start_import_run(self, job_id: str | None = None) -> None:
@@ -627,26 +606,26 @@ else:
             self._is_paused = False
             self._last_error_count = 0
             self.start_btn.configure(state="disabled")
-            self.pause_btn.configure(state="normal", text="Pause")
+            self.pause_btn.configure(state="normal", text=t("app.pause"))
             self.stop_btn.configure(state="normal")
             self.retry_btn.configure(state="disabled")
             self.browse_btn.configure(state="disabled")
             self.album_entry.configure(state="disabled")
             self.album_auto_btn.configure(state="disabled")
             self.library_combo.configure(state="disabled")
-            self._set_status("Scanning...", indeterminate=True)
+            self._set_status(t("progress.scanning"), indeterminate=True)
             if job_id:
                 self._last_job_id = job_id
-                self.add_log("Import wird fortgesetzt...")
+                self.add_log(t("log.import_resumed"))
                 self._bridge.resume_import(job_id)
                 return
-            self.add_log("Import gestartet...")
+            self.add_log(t("log.import_started"))
             library = self._get_selected_library()
             album = self.album_var.get().strip()
             if library is not None:
-                self.add_log(f"Ziel-Mediathek: {library}")
+                self.add_log(t("log.target_library", library=library))
             if album:
-                self.add_log(f"Import-Album: {album}")
+                self.add_log(t("log.import_album", album=album))
             self._bridge.start_import(self._source_path, library=library, album=album)
 
         def _on_pause(self) -> None:
@@ -654,58 +633,55 @@ else:
                 return
             if self._is_paused:
                 self._is_paused = False
-                self.pause_btn.configure(text="Pause")
-                self._set_status("Importing...")
+                self.pause_btn.configure(text=t("app.pause"))
+                self._set_status(t("progress.importing", imported="…", total="…"))
                 self._bridge.resume()
-                self.add_log("Import fortgesetzt.")
+                self.add_log(t("log.import_resumed_action"))
                 return
             self._is_paused = True
-            self.pause_btn.configure(text="Resume")
-            self._set_status("Paused")
+            self.pause_btn.configure(text=t("app.resume"))
+            self._set_status(t("progress.paused"))
             self._bridge.pause()
-            self.add_log("Import pausiert.")
+            self.add_log(t("log.import_paused"))
 
         def _on_stop(self) -> None:
             if not self._is_running:
                 return
             self._bridge.stop()
-            self._finish_run("⏹ Gestoppt", "Import gestoppt.")
+            self._finish_run(t("progress.stopped"), t("log.import_stopped"))
 
         def _on_retry_errors(self) -> None:
             if self._is_running or not self._last_job_id:
                 return
             error_count = self._last_error_count
             should_retry = messagebox.askyesno(
-                APP_TITLE,
-                (
-                    f"{error_count} Dateien mit Fehlern gefunden.\n\n"
-                    "Möchtest du diese Dateien erneut importieren?"
-                ),
+                t("dialog.resume_title"),
+                t("dialog.retry_message", count=error_count),
                 icon="question",
             )
             if not should_retry:
                 return
-            self.add_log(f"Retry: {error_count} fehlerhafte Dateien werden erneut importiert...")
+            self.add_log(t("log.retry_reimporting", count=error_count))
             self._is_running = True
             self._is_paused = False
             self._last_error_count = 0
             self.start_btn.configure(state="disabled")
-            self.pause_btn.configure(state="normal", text="Pause")
+            self.pause_btn.configure(state="normal", text=t("app.pause"))
             self.stop_btn.configure(state="normal")
             self.retry_btn.configure(state="disabled")
             self.browse_btn.configure(state="disabled")
             self.album_entry.configure(state="disabled")
             self.album_auto_btn.configure(state="disabled")
             self.library_combo.configure(state="disabled")
-            self._set_status("Importing...", indeterminate=True)
+            self._set_status(t("progress.importing", imported="…", total="…"), indeterminate=True)
             self._bridge.retry_errors(self._last_job_id)
 
         def _on_restart_photos(self) -> None:
             self.restart_photos_btn.pack_forget()
             self._is_paused = False
-            self.pause_btn.configure(text="Pause")
-            self._set_status("Restarting Photos...")
-            self.add_log("Photos.app wird neu gestartet...")
+            self.pause_btn.configure(text=t("app.pause"))
+            self._set_status(t("progress.restarting_photos"))
+            self.add_log(t("log.photos_restarting"))
             self._bridge.restart_photos()
 
         def _handle_progress(self, payload: dict) -> None:
@@ -721,18 +697,18 @@ else:
                 self.update_stats(payload)
 
         def _handle_complete(self) -> None:
-            self.after(0, lambda: self._finish_run("✅ Fertig", "Import abgeschlossen.", completed=True))
+            self.after(0, lambda: self._finish_run(t("progress.complete"), t("log.import_complete"), completed=True))
 
         def _handle_error(self, message: str) -> None:
-            self.after(0, lambda: self._finish_run("⚠️ Fehler", f"Fehler: {message}"))
+            self.after(0, lambda: self._finish_run(t("progress.error"), t("log.error_prefix", message=message)))
 
         def _handle_permission_error(self) -> None:
             def _show_dialog() -> None:
                 if self._is_running:
                     self._bridge.stop()
                 self._finish_run(
-                    "⚠️ Berechtigung erforderlich",
-                    "Import wegen fehlender Automation-Berechtigung gestoppt.",
+                    t("progress.permission_required"),
+                    t("log.import_permission_stopped"),
                 )
                 if _prompt_for_automation_permission():
                     _open_automation_settings()
@@ -743,7 +719,7 @@ else:
             self._is_running = False
             self._is_paused = False
             self.start_btn.configure(state="normal" if self._source_path else "disabled")
-            self.pause_btn.configure(state="disabled", text="Pause")
+            self.pause_btn.configure(state="disabled", text=t("app.pause"))
             self.stop_btn.configure(state="disabled")
             self.retry_btn.configure(state="normal" if self._last_error_count > 0 else "disabled")
             self.restart_photos_btn.pack_forget()
@@ -805,15 +781,15 @@ else:
 
                 # Update status text
                 if state == "scanning":
-                    self._set_status("Scanning...", indeterminate=True)
+                    self._set_status(t("progress.scanning"), indeterminate=True)
                 elif state == "deduplicating":
-                    self._set_status("Checking duplicates...")
+                    self._set_status(t("progress.deduplicating"))
                 elif state == "staging":
-                    self._set_status("Staging files...")
+                    self._set_status(t("progress.staging"))
                 elif self._is_running and not self._is_paused and isinstance(total, int) and total > 0:
                     imported_count = int(values["imported"])
                     self.status_label.configure(
-                        text=f"Importing... {imported_count:,} of {total:,}",
+                        text=t("progress.importing", imported=f"{imported_count:,}", total=f"{total:,}"),
                     )
                     self.progress_bar.stop()
                     self.progress_bar.configure(mode="determinate")

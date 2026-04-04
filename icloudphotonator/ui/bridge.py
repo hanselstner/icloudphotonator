@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
+from icloudphotonator.i18n import t
 from icloudphotonator.db import Database
 from icloudphotonator.persistence import (
     DEFAULT_ACTIVE_JOB_PATH,
@@ -48,7 +49,7 @@ class BackendBridge:
     def start_import(self, source_path: Path, library: Path | None = None, album: str | None = None) -> None:
         """Start an import in a dedicated background thread."""
         if self._thread and self._thread.is_alive():
-            self._emit_log("Ein Import läuft bereits.")
+            self._emit_log(t("log.import_already_running"))
             return
         self._thread = threading.Thread(
             target=self._run_import,
@@ -60,14 +61,14 @@ class BackendBridge:
     def resume_import(self, job_id: str) -> None:
         """Resume an existing import in a dedicated background thread."""
         if self._thread and self._thread.is_alive():
-            self._emit_log("Ein Import läuft bereits.")
+            self._emit_log(t("log.import_already_running"))
             return
 
         db = Database(self._db_path)
         job = db.get_job(job_id)
         if not job or not job.get("source_path"):
             clear_active_job(self._active_job_path)
-            self._emit_error("Der gespeicherte Import konnte nicht gefunden werden.")
+            self._emit_error(t("log.saved_import_not_found"))
             return
 
         self._thread = threading.Thread(
@@ -99,17 +100,17 @@ class BackendBridge:
     def retry_errors(self, job_id: str) -> None:
         """Reset error files to pending and restart the import."""
         if self._thread and self._thread.is_alive():
-            self._emit_log("Ein Import läuft bereits.")
+            self._emit_log(t("log.import_already_running"))
             return
 
         db = Database(self._db_path)
         job = db.get_job(job_id)
         if not job or not job.get("source_path"):
-            self._emit_error("Der gespeicherte Import konnte nicht gefunden werden.")
+            self._emit_error(t("log.saved_import_not_found"))
             return
 
         error_count = db.get_job_stats(job_id).get("error", 0)
-        self._emit_log(f"Setze {error_count} fehlerhafte Dateien zurück...")
+        self._emit_log(t("log.resetting_error_files", count=error_count))
         db.reset_error_files(job_id)
 
         self._thread = threading.Thread(
@@ -208,9 +209,9 @@ class BackendBridge:
 
             start_import = getattr(orchestrator, "start_import", None)
             if not callable(start_import):
-                raise AttributeError("ImportOrchestrator.start_import() ist nicht verfügbar.")
+                raise AttributeError(t("log.orchestrator_not_available"))
 
-            self._emit_log(f"Starte Import für: {source_path}")
+            self._emit_log(t("log.starting_import_for", path=source_path))
             result = start_import(source_path, job_id=job_id)
             if asyncio.iscoroutine(result):
                 result = self._loop.run_until_complete(result)

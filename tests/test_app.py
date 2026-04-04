@@ -2,9 +2,11 @@ import json
 from types import SimpleNamespace
 
 import icloudphotonator.ui.app as app
+from icloudphotonator.i18n import load_locale
 
 
 def test_prompt_for_automation_permission_uses_german_dialog(monkeypatch) -> None:
+    load_locale("de")
     captured: dict[str, object] = {}
 
     class FakeMessageBox:
@@ -77,6 +79,7 @@ def test_onboarding_done_round_trip_uses_config_file(tmp_path, monkeypatch) -> N
 
 
 def test_show_onboarding_uses_german_dialog_and_marks_completion(monkeypatch) -> None:
+    load_locale("de")
     captured: dict[str, object] = {}
     logs: list[str] = []
     marks: list[str] = []
