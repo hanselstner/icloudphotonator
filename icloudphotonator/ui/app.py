@@ -840,28 +840,25 @@ else:
 
             self.start_btn = ctk.CTkButton(
                 ctrl_frame, text=t("app.start"), height=36, corner_radius=8,
-                fg_color=SUCCESS, hover_color="#2DB84E", text_color="white",
+                fg_color="#34C759", hover_color="#2DB84E", text_color="#ffffff",
                 command=self._on_start, state="disabled",
             )
             self.start_btn.grid(row=0, column=0, padx=(0, 4), sticky="ew")
             self.pause_btn = ctk.CTkButton(
                 ctrl_frame, text=t("app.pause"), height=36, corner_radius=8,
-                fg_color="transparent", border_width=1, border_color=WARNING,
-                text_color=("#FF9500", "#FFB340"), hover_color=("#fff3e0", "#3a3020"),
+                fg_color="#FF9500", hover_color="#E68600", text_color="#ffffff",
                 command=self._on_pause, state="disabled",
             )
             self.pause_btn.grid(row=0, column=1, padx=4, sticky="ew")
             self.stop_btn = ctk.CTkButton(
                 ctrl_frame, text=t("app.stop"), height=36, corner_radius=8,
-                fg_color="transparent", border_width=1, border_color=ERROR,
-                text_color=("#FF3B30", "#FF6961"), hover_color=("#ffe8e6", "#3a2020"),
+                fg_color="#FF3B30", hover_color="#E0352B", text_color="#ffffff",
                 command=self._on_stop, state="disabled",
             )
             self.stop_btn.grid(row=0, column=2, padx=4, sticky="ew")
             self.retry_btn = ctk.CTkButton(
                 ctrl_frame, text=t("app.retry"), height=36, corner_radius=8,
-                fg_color="transparent", border_width=1, border_color=ACCENT_BLUE,
-                text_color=("#007AFF", "#4DA3FF"), hover_color=("#e8f0fe", "#1a3a5c"),
+                fg_color="#007AFF", hover_color="#005EC4", text_color="#ffffff",
                 command=self._on_retry_errors, state="disabled",
             )
             self.retry_btn.grid(row=0, column=3, padx=(4, 0), sticky="ew")
