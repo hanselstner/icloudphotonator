@@ -1,10 +1,24 @@
 """Simple i18n module for iCloudPhotonator."""
 import json
+import sys
 from pathlib import Path
 
 _current_locale = "en"
 _translations: dict[str, dict[str, str]] = {}
-_locales_dir = Path(__file__).parent / "locales"
+
+
+def _get_locales_dir() -> Path:
+    """Get locales directory, works both in dev and PyInstaller bundle."""
+    if getattr(sys, 'frozen', False):
+        # Running in PyInstaller bundle
+        base = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    else:
+        # Running in dev
+        base = Path(__file__).parent
+    return base / "locales"
+
+
+_locales_dir = _get_locales_dir()
 
 
 def load_locale(locale: str) -> None:

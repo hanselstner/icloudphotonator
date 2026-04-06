@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 from pathlib import Path
 
 import customtkinter
@@ -23,7 +24,10 @@ def _dedupe(items):
     return result
 
 
-datas = [(str(CUSTOMTKINTER_PATH), "customtkinter")]
+datas = [
+    (str(CUSTOMTKINTER_PATH), "customtkinter"),
+    (os.path.join("icloudphotonator", "locales"), "locales"),  # i18n translations
+]
 binaries = []
 hiddenimports = [
     "customtkinter",
