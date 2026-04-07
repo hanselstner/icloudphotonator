@@ -33,7 +33,7 @@ def _write_file(path: Path, size: int = 128) -> Path:
         ("sample.mp4", MediaType.VIDEO),
         ("sample.m4v", MediaType.VIDEO),
         ("sample.avi", MediaType.VIDEO),
-        ("sample.aae", MediaType.AAE),
+        ("sample.aae", MediaType.UNKNOWN),
     ],
 )
 def test_classify_supported_formats(tmp_path: Path, filename: str, expected_type: MediaType) -> None:

@@ -45,7 +45,6 @@ SUPPORTED_FORMATS: dict[MediaType, set[str]] = {
         ".dng",
     },
     MediaType.VIDEO: {".mov", ".mp4", ".m4v", ".avi"},
-    MediaType.AAE: {".aae"},
 }
 
 
