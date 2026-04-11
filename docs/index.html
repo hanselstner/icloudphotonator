@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iCloudPhotonator — Bring your photo memories home to Apple Photos</title>
+  <meta name="description" content="Bulk-import thousands of photos & videos from NAS or external drives into Apple Photos — reliably, pausably, without duplicates.">
+  <meta name="theme-color" content="#0d1117">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖼️</text></svg>">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0d1117; --bg-card: #161b22; --accent: #007AFF;
+      --accent-hover: #0066d6; --text: #ffffff; --text-muted: #8b949e;
+      --success: #2ea043; --border: #30363d; --radius: 12px;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; }
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Hero */
+    .hero { text-align: center; padding: 100px 24px 80px; }
+    .hero-icon { font-size: 80px; margin-bottom: 16px; display: block; }
+    .hero h1 { font-size: clamp(2.5rem, 6vw, 3.5rem); font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px; }
+    .hero .subtitle { font-size: clamp(1.1rem, 2.5vw, 1.4rem); color: var(--text-muted); margin-bottom: 24px; }
+    .hero .tagline { font-size: 1rem; color: var(--text-muted); max-width: 600px; margin: 0 auto 40px; }
+    .btn-group { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 14px 32px; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; text-decoration: none; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); text-decoration: none; transform: translateY(-1px); }
+    .btn-outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
+    .btn-outline:hover { border-color: var(--text-muted); text-decoration: none; }
+    .hero .meta { font-size: 0.85rem; color: var(--text-muted); }
+
+    /* Sections */
+    section { padding: 80px 0; }
+    .section-title { font-size: clamp(1.8rem, 4vw, 2.4rem); font-weight: 700; text-align: center; margin-bottom: 16px; letter-spacing: -0.01em; }
+    .section-subtitle { text-align: center; color: var(--text-muted); max-width: 640px; margin: 0 auto 48px; font-size: 1.1rem; }
+
+    /* Cards */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px 28px; }
+    .card-icon { font-size: 2rem; margin-bottom: 12px; display: block; }
+    .card h3 { font-size: 1.15rem; margin-bottom: 8px; }
+    .card p { color: var(--text-muted); font-size: 0.95rem; }
+
+    /* Features */
+    .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+    .feature { display: flex; gap: 16px; align-items: flex-start; padding: 20px; border-radius: var(--radius); background: var(--bg-card); border: 1px solid var(--border); }
+    .feature-icon { font-size: 1.6rem; flex-shrink: 0; margin-top: 2px; }
+    .feature h3 { font-size: 1rem; margin-bottom: 4px; }
+    .feature p { color: var(--text-muted); font-size: 0.9rem; }
+
+    /* Pipeline */
+    .pipeline { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-bottom: 32px; }
+    .pipeline-step { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 24px; text-align: center; min-width: 110px; }
+    .pipeline-step .step-icon { font-size: 1.5rem; display: block; margin-bottom: 4px; }
+    .pipeline-step .step-label { font-size: 0.85rem; font-weight: 600; }
+    .pipeline-arrow { color: var(--text-muted); font-size: 1.2rem; }
+    .pipeline-text { text-align: center; color: var(--text-muted); max-width: 700px; margin: 0 auto; font-size: 0.95rem; }
+
+    /* CTA */
+    .cta { text-align: center; padding: 80px 0; }
+    .cta .btn { font-size: 1.1rem; padding: 16px 40px; }
+    .cta .requirements { margin-top: 24px; color: var(--text-muted); font-size: 0.9rem; }
+    .cta .requirements span { display: inline-block; margin: 0 8px; }
+
+    /* Footer */
+    footer { text-align: center; padding: 40px 24px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem; }
+    footer a { color: var(--text-muted); }
+    footer a:hover { color: var(--text); }
+    footer .footer-links { display: flex; gap: 24px; justify-content: center; margin-top: 8px; }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .hero { padding: 64px 16px 48px; }
+      section { padding: 48px 0; }
+      .btn { padding: 12px 24px; font-size: 0.95rem; }
+      .pipeline-arrow { display: none; }
+      .pipeline { gap: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="container">
+      <span class="hero-icon">🖼️</span>
+      <h1>iCloudPhotonator</h1>
+      <p class="subtitle">Bring your photo memories home to Apple&nbsp;Photos</p>
+      <p class="tagline">Bulk-import thousands of photos &amp; videos from NAS or external drives into Apple Photos — reliably, pausably, without duplicates.</p>
+      <div class="btn-group">
+        <a href="https://github.com/hanselstner/icloudphotonator/releases/latest" class="btn btn-primary">⬇ Download for macOS</a>
+        <a href="https://github.com/hanselstner/icloudphotonator" class="btn btn-outline">View on GitHub</a>
+      </div>
+      <p class="meta">Requires macOS 13+ · Free &amp; Open Source · MIT License</p>
+    </div>
+  </header>
+
+  <!-- Problem -->
+  <section>
+    <div class="container">
+      <h2 class="section-title">Your memories deserve better</h2>
+      <p class="section-subtitle">Thousands of photos trapped on aging hardware — no search, no backup, no way to relive them. That ends now.</p>
+      <div class="card-grid">
+        <div class="card">
+          <span class="card-icon">📁</span>
+          <h3>Scattered across devices</h3>
+          <p>Photos on NAS, external drives, old laptops — hard to find, easy to lose.</p>
+        </div>
+        <div class="card">
+          <span class="card-icon">⚠️</span>
+          <h3>Hardware doesn't last</h3>
+          <p>Hard drives fail. NAS boxes age. One day those memories are just… gone.</p>
+        </div>
+        <div class="card">
+          <span class="card-icon">🔍</span>
+          <h3>Impossible to search</h3>
+          <p>No face recognition, no location search, no memories — just folders of files.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Solution / Features -->
+  <section>
+    <div class="container">
+      <h2 class="section-title">Import once. Keep forever.</h2>
+      <p class="section-subtitle">iCloudPhotonator moves your entire photo collection into Apple Photos — safely, incrementally, and without losing a single file.</p>
+      <div class="feature-grid">
+        <div class="feature">
+          <span class="feature-icon">🚀</span>
+          <div><h3>Bulk Import</h3><p>Import 10,000 to 100,000+ files in a single run.</p></div>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">⏸️</span>
+          <div><h3>Pause &amp; Resume</h3><p>Stop and continue anytime — never lose progress.</p></div>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">🔄</span>
+          <div><h3>Smart Deduplication</h3><p>No duplicate imports, ever. Hash-based detection keeps your library clean.</p></div>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">🛡️</span>
+          <div><h3>Auto-Recovery</h3><p>Automatic escalation when Photos.app becomes unresponsive.</p></div>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">🌍</span>
+          <div><h3>Multilingual</h3><p>Full English and German UI — more languages welcome.</p></div>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">⚙️</span>
+          <div><h3>Configurable</h3><p>Tune batch sizes, cooldowns, and restart intervals to your hardware.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pipeline -->
+  <section>
+    <div class="container">
+      <h2 class="section-title">How it works</h2>
+      <p class="section-subtitle">A five-stage pipeline that handles every edge case so you don't have to.</p>
+      <div class="pipeline">
+        <div class="pipeline-step"><span class="step-icon">🔎</span><span class="step-label">Scan</span></div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-step"><span class="step-icon">📂</span><span class="step-label">Stage</span></div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-step"><span class="step-icon">🧹</span><span class="step-label">Deduplicate</span></div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-step"><span class="step-icon">📥</span><span class="step-label">Import</span></div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-step"><span class="step-icon">✅</span><span class="step-label">Cleanup</span></div>
+      </div>
+      <p class="pipeline-text">Every step is persisted in a local database. Crash? Restart? Network drop? Resume exactly where you left off.</p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="container">
+      <h2 class="section-title">Ready to bring your photos home?</h2>
+      <div style="margin-top: 32px;">
+        <a href="https://github.com/hanselstner/icloudphotonator/releases/latest" class="btn btn-primary">⬇ Download for macOS</a>
+      </div>
+      <div class="requirements">
+        <span>macOS 13 (Ventura) or later</span>·<span>Apple Photos.app</span>·<span>Free &amp; open source</span>·<span>MIT Licensed</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p>Made with ❤️ for photo lovers</p>
+    <div class="footer-links">
+      <a href="https://github.com/hanselstner/icloudphotonator">GitHub</a>
+      <a href="https://github.com/hanselstner/icloudphotonator/blob/main/LICENSE">MIT License</a>
+      <a href="https://github.com/hanselstner/icloudphotonator/releases">Releases</a>
+    </div>
+  </footer>
+
+</body>
+</html>
+
