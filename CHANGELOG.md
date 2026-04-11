@@ -4,13 +4,14 @@ All notable changes to iCloudPhotonator will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] — 2026-04-04
+## [1.0.0] — 2026-04-11
 
 ### Added
 - Complete UI redesign: modern flat design with dark/light mode support
-- Internationalization: English (default) + German
-- Settings dialog: configurable batch sizes, cooldowns, restart intervals
+- Internationalization: English (default) + German with JSON-based locale files
+- Settings dialog: configurable batch sizes, cooldowns, restart intervals, and language
 - Step-by-step onboarding wizard with permission checks
+- AAE sidecar exclusion: Apple edit sidecar files (.AAE) are automatically filtered out during scan
 
 ### Improved
 - Smart escalation: 4-level automatic recovery (pause → longer pause → Photos restart → manual)
@@ -18,11 +19,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Graceful Photos restart: clean quit with wait instead of force-kill
 - Proactive Photos restart every N imports to prevent instability
 - Cooldown optimization: skip cooldown for duplicate-only batches
+- All internal log messages and error strings translated to English
 
 ### Fixed
 - Escalation fix: only trigger on real Photos errors, not duplicates
 - Staging cleanup: guaranteed cleanup via try/finally
 - Oversized file handling: files larger than staging limit are skipped gracefully
+- i18n bundle fix: locale JSON files correctly included in PyInstaller builds
+- Button state fix: UI buttons correctly disabled/enabled during import phases
 
 ## [0.3.0-beta] — 2026-04-03
 

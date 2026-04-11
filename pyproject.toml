@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "icloudphotonator"
 version = "1.0.0"
-description = "Python backend for icloudphotonator"
+description = "Intelligent photo migration helper for Apple Photos on macOS"
 requires-python = ">=3.13"
 dependencies = [
   "osxphotos",
@@ -15,6 +15,11 @@ dependencies = [
   "aiohttp",
   "customtkinter>=5.2.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/hanselstner/icloudphototnator"
+Repository = "https://github.com/hanselstner/icloudphototnator"
+Issues = "https://github.com/hanselstner/icloudphototnator/issues"
 
 [dependency-groups]
 dev = [

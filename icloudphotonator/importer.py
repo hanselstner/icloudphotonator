@@ -40,7 +40,7 @@ class PhotoImporter:
         self.osxphotos_path = osxphotos_path
         self._verify_osxphotos()
 
-    def _verify_osxphotos(self):
+    def _verify_osxphotos(self) -> None:
         """Check that osxphotos' import API is available."""
         self._get_import_cli()
 
@@ -80,7 +80,7 @@ class PhotoImporter:
             if not error_msg:
                 error_msg = f"{type(exc).__module__}.{type(exc).__name__}"
             if "Abort" in type(exc).__name__ and not parts:
-                error_msg = "osxphotos aborted — möglicherweise fehlt exiftool (https://exiftool.org/)"
+                error_msg = "osxphotos aborted — exiftool may be missing (https://exiftool.org/)"
             return self._result_from_report(
                 report_path=report_path,
                 fallback_success=False,
@@ -137,7 +137,7 @@ class PhotoImporter:
             try:
                 future.result(timeout=timeout)
             except concurrent.futures.TimeoutError:
-                raise TimeoutError(f"osxphotos Import-Timeout nach {timeout}s")
+                raise TimeoutError(f"osxphotos import timed out after {timeout}s")
 
     def _get_import_cli(self):
         try:
@@ -200,7 +200,7 @@ class PhotoImporter:
                         error_text = raw_error
                 if not error_text:
                     filepath = row.get("filepath") or row.get("file") or ""
-                    error_text = f"Photos.app Fehler bei {Path(filepath).name}" if filepath else "osxphotos reported an error"
+                    error_text = f"Photos.app error for {Path(filepath).name}" if filepath else "osxphotos reported an error"
                 errors.append(
                     {
                         "file": row.get("filepath") or row.get("file") or "",

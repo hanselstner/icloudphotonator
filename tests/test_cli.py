@@ -16,7 +16,7 @@ def test_version_works() -> None:
     result = CliRunner().invoke(main, ["--version"])
 
     assert result.exit_code == 0
-    assert "0.1.0" in result.output
+    assert "1.0.0" in result.output
 
 
 def test_import_photos_help_shows_expected_options() -> None:
@@ -114,6 +114,6 @@ def test_retry_errors_resets_latest_job_error_files(tmp_path) -> None:
 
     assert result.exit_code == 0
     assert job_id in result.output
-    assert "1 Fehlerdateien" in result.output
+    assert "1 error files reset" in result.output
     pending_rows = db.get_pending_files(job_id, limit=10)
     assert [row["path"] for row in pending_rows] == ["/photos/a.jpg"]

@@ -38,7 +38,7 @@ class DeduplicationEngine:
 
         return unique_files, duplicate_files
 
-    def mark_as_imported(self, file_info: FileInfo, photos_uuid: str = None):
+    def mark_as_imported(self, file_info: FileInfo, photos_uuid: str | None = None) -> None:
         """Record that this file has been imported."""
         if file_info.hash:
             self._imported_hashes.add(file_info.hash)

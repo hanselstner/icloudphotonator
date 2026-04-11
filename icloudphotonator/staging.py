@@ -29,14 +29,14 @@ def validate_media_file(path: Path) -> tuple[bool, str]:
         with open(path, 'rb') as f:
             header = f.read(16)
     except OSError as e:
-        return False, f"Datei nicht lesbar: {e}"
+        return False, f"File not readable: {e}"
 
     if len(header) < 4:
-        return False, "Datei zu klein"
+        return False, "File too small"
 
     # Null-byte check: if first 16 bytes are all zeros, file is corrupt
     if all(b == 0 for b in header):
-        return False, "Korrupte Datei: nur Nullbytes"
+        return False, "Corrupt file: null bytes only"
 
     # Check known magic bytes
     if header[:3] == b'\xff\xd8\xff':  # JPEG
@@ -95,7 +95,7 @@ class StagingManager:
                 failures.append(StagingFailure(
                     file_info=file_info,
                     staged_path=file_info.path,
-                    error=f"Datei zu groß für Staging ({size_mb:.0f} MB > {max_mb:.0f} MB Limit)",
+                    error=f"File too large for staging ({size_mb:.0f} MB > {max_mb:.0f} MB limit)",
                 ))
                 continue
 
@@ -118,7 +118,7 @@ class StagingManager:
                 failures.append(StagingFailure(file_info=file_info, staged_path=staged_path, error=str(exc)))
                 continue
 
-            logger.debug("Datei gestaged: %s → %s", file_info.path, staged_path)
+            logger.debug("File staged: %s → %s", file_info.path, staged_path)
             self._cumulative_staged_count += 1
             staged_files.append((file_info, staged_path))
             if progress_callback is not None:

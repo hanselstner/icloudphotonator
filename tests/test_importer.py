@@ -109,6 +109,6 @@ def test_import_batch_returns_descriptive_error_for_empty_abort_exception(
     assert result.errors == [
         {
             "file": "",
-            "error": "osxphotos aborted — möglicherweise fehlt exiftool (https://exiftool.org/)",
+            "error": "osxphotos aborted — exiftool may be missing (https://exiftool.org/)",
         }
     ]

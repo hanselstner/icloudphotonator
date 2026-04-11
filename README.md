@@ -243,16 +243,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 ## Changelog
 
-### v1.0.0 — April 4, 2026
+### v1.0.0 — April 11, 2026
 
 - Complete UI redesign: modern flat design with dark/light mode support
-- Internationalization: English (default) + German
-- Settings dialog: configurable batch sizes, cooldowns, restart intervals
+- Internationalization: English (default) + German with JSON-based locale files
+- Settings dialog: configurable batch sizes, cooldowns, restart intervals, and language
 - Step-by-step onboarding wizard with permission checks
 - Smart 4-level escalation for Photos.app issues
 - Graceful Photos restart with clean quit and wait
+- Proactive restart: automatic Photos restart after configurable interval
 - Cooldown optimization: skip cooldown for duplicate-only batches
 - Oversized file handling: graceful skip instead of blocking
+- AAE sidecar exclusion: Apple edit files are automatically filtered out
+- Staging cleanup: imported staging files are cleaned up after each batch
+- i18n bundle fix: locale files correctly included in PyInstaller builds
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 

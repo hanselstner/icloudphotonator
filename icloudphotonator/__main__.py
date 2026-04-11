@@ -9,7 +9,7 @@ from icloudphotonator import __version__
 @click.version_option(version=__version__, prog_name="icloudphotonator")
 @click.pass_context
 def main(ctx: click.Context) -> None:
-    """iCloudPhotonator — Intelligente Foto-Migration für Apple Fotos."""
+    """iCloudPhotonator — Intelligent photo migration for Apple Photos."""
     if ctx.invoked_subcommand is None and len(sys.argv) == 1:
         from icloudphotonator.ui.app import main as gui_main
 
@@ -42,14 +42,14 @@ def gui() -> None:
     "--album",
     type=str,
     default=None,
-    help="Name des Import-Albums (Standard: Name des Quellordners)",
+    help="Name of the import album (default: source folder name)",
 )
 @click.option(
     "--library",
     "--mediathek",
     type=click.Path(exists=True),
     default=None,
-    help="Pfad zur Ziel-Mediathek (.photoslibrary)",
+    help="Path to the target Photos library (.photoslibrary)",
 )
 def import_photos(
     source: str,
@@ -78,7 +78,7 @@ def import_photos(
     if target_album:
         click.echo(f"🗂️ Album: {target_album}")
     if target_library is not None:
-        click.echo(f"📚 Mediathek: {target_library}")
+        click.echo(f"📚 Library: {target_library}")
 
     orchestrator = ImportOrchestrator(db_path=db, staging_dir=staging, library=target_library, album=target_album)
 
@@ -112,11 +112,11 @@ def retry_errors(db_path: str | None) -> None:
     db = Database(db_file)
     latest_job = db.get_latest_job()
     if latest_job is None:
-        click.echo("Keine Jobs gefunden.")
+        click.echo("No jobs found.")
         return
 
     reset_count = db.reset_error_files(latest_job["id"])
-    click.echo(f"🔄 {reset_count} Fehlerdateien für Job {latest_job['id']} zurückgesetzt.")
+    click.echo(f"🔄 {reset_count} error files reset for job {latest_job['id']}.")
 
 
 if __name__ == "__main__":

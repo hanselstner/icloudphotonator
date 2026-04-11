@@ -797,9 +797,9 @@ class ImportOrchestrator:
         minutes = seconds // 60
         remaining_secs = seconds % 60
         if remaining_secs:
-            duration_label = f"{minutes} Min {remaining_secs}s"
+            duration_label = f"{minutes}m {remaining_secs}s"
         else:
-            duration_label = f"{minutes} Minuten" if minutes != 1 else "1 Minute"
+            duration_label = f"{minutes} minutes" if minutes != 1 else "1 minute"
         self._emit_log(t("log.auto_pause", duration=duration_label))
 
         self._pause_reason = "auto_pause"
@@ -917,7 +917,7 @@ class ImportOrchestrator:
 
         if result.errors:
             for err in result.errors[:3]:
-                self._emit_log(f"❌ {err.get('error', 'Unbekannter Fehler')}")
+                self._emit_log(f"❌ {err.get('error', 'Unknown error')}")
 
         for report_row in rows:
             staged_file = report_row.get("filepath")
@@ -962,7 +962,7 @@ class ImportOrchestrator:
                     if raw_error.lower() not in {"1", "true", "yes", ""}:
                         error_text = raw_error
                 if not error_text:
-                    error_text = f"Photos.app Fehler bei {Path(staged_file).name}"
+                    error_text = f"Photos.app error for {Path(staged_file).name}"
                     # Silent failure — retry instead of permanent error
                     retry_count = self._count_retries(job.job_id, file_row["id"])
                     if retry_count < 3:
@@ -983,22 +983,22 @@ class ImportOrchestrator:
                 if staged_path.exists():
                     size = staged_path.stat().st_size
                     if size == 0:
-                        reject_msg = f"Datei ist leer (0 bytes): {original_name}"
+                        reject_msg = f"Empty file (0 bytes): {original_name}"
                     else:
                         with open(staged_path, 'rb') as f:
                             magic = f.read(12)
                         ext = staged_path.suffix.lower()
                         if ext in ('.heic', '.heif') and b'ftyp' not in magic:
-                            reject_msg = f"Ungültiges HEIC-Format (magic bytes stimmen nicht): {original_name}"
+                            reject_msg = f"Invalid HEIC format (magic bytes mismatch): {original_name}"
                         elif ext in ('.jpg', '.jpeg') and magic[:2] != b'\xff\xd8':
-                            reject_msg = f"Ungültiges JPEG-Format (magic bytes stimmen nicht): {original_name}"
+                            reject_msg = f"Invalid JPEG format (magic bytes mismatch): {original_name}"
                         else:
-                            reject_msg = f"Duplikat-Skip ({size} bytes, Format scheint OK): {original_name}"
+                            reject_msg = f"Duplicate skip ({size} bytes, format looks OK): {original_name}"
                             self.db.update_file_status(file_row["id"], FileStatus.SKIPPED_DUPLICATE, reject_msg)
                             self.db.log_action(job.job_id, file_row["id"], "skipped_duplicate", reject_msg)
                             continue
                 else:
-                    reject_msg = f"Staging-Datei nicht mehr vorhanden (kein Fehler gemeldet): {original_name}"
+                    reject_msg = f"Staged file no longer present (no error reported): {original_name}"
                     self.db.update_file_status(file_row["id"], FileStatus.SKIPPED_DUPLICATE, reject_msg)
                     self.db.log_action(job.job_id, file_row["id"], "skipped_duplicate", reject_msg)
                     continue
@@ -1014,15 +1014,15 @@ class ImportOrchestrator:
                             job.job_id,
                             file_row["id"],
                             "skipped_unmatched",
-                            "Nicht im osxphotos-Report — wahrscheinlich Duplikat",
+                            "Not in osxphotos report — likely duplicate",
                         )
                     else:
-                        self.db.update_file_status(file_row["id"], FileStatus.ERROR, "Datei nicht im Import-Report gefunden")
+                        self.db.update_file_status(file_row["id"], FileStatus.ERROR, "File not found in import report")
                         self.db.log_action(
                             job.job_id,
                             file_row["id"],
                             "import_error",
-                            "Datei nicht im Import-Report gefunden",
+                            "File not found in import report",
                         )
                     processed_paths.add(orig_path)
 

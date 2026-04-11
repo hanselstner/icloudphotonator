@@ -37,3 +37,6 @@ __pycache__/
 # macOS build artifacts
 *.dmg
 *.app
+
+# Test artifacts
+.playwright-mcp/
