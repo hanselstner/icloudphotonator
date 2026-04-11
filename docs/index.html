@@ -7,6 +7,7 @@
   <meta name="description" content="Bulk-import thousands of photos & videos from NAS or external drives into Apple Photos — reliably, pausably, without duplicates.">
   <meta name="theme-color" content="#0d1117">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖼️</text></svg>">
+  <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -74,6 +75,14 @@
     footer a:hover { color: var(--text); }
     footer .footer-links { display: flex; gap: 24px; justify-content: center; margin-top: 8px; }
 
+    /* Lucide Icons */
+    .icon-hero { width: 64px; height: 64px; color: var(--accent); margin-bottom: 16px; }
+    .icon-card { width: 32px; height: 32px; color: var(--accent); margin-bottom: 12px; }
+    .icon-feature { width: 28px; height: 28px; color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+    .icon-pipeline { width: 28px; height: 28px; color: var(--accent); margin-bottom: 4px; }
+    .icon-inline { width: 20px; height: 20px; vertical-align: middle; }
+    .icon-heart { width: 16px; height: 16px; color: #e74c3c; vertical-align: middle; }
+
     /* Responsive */
     @media (max-width: 640px) {
       .hero { padding: 64px 16px 48px; }
@@ -89,12 +98,12 @@
   <!-- Hero -->
   <header class="hero">
     <div class="container">
-      <span class="hero-icon">🖼️</span>
+      <i data-lucide="image" class="icon-hero"></i>
       <h1>iCloudPhotonator</h1>
       <p class="subtitle">Bring your photo memories home to Apple&nbsp;Photos</p>
-      <p class="tagline">Bulk-import thousands of photos &amp; videos from NAS or external drives into Apple Photos — reliably, pausably, without duplicates.</p>
+      <p class="tagline">Bulk-import thousands of photos &amp; videos from your NAS, external drives, or local folders into Apple Photos — reliably, pausably, without duplicates.</p>
       <div class="btn-group">
-        <a href="https://github.com/hanselstner/icloudphotonator/releases/latest" class="btn btn-primary">⬇ Download for macOS</a>
+        <a href="https://github.com/hanselstner/icloudphotonator/releases/download/v1.0.0/iCloudPhotonator-v1.0.0-macos.dmg" class="btn btn-primary"><i data-lucide="download" class="icon-inline"></i> Download DMG for macOS</a>
         <a href="https://github.com/hanselstner/icloudphotonator" class="btn btn-outline">View on GitHub</a>
       </div>
       <p class="meta">Requires macOS 13+ · Free &amp; Open Source · MIT License</p>
@@ -105,22 +114,47 @@
   <section>
     <div class="container">
       <h2 class="section-title">Your memories deserve better</h2>
-      <p class="section-subtitle">Thousands of photos trapped on aging hardware — no search, no backup, no way to relive them. That ends now.</p>
+      <p class="section-subtitle">Most of us started taking digital photos in the early 2000s. Since then, tens of thousands of images have piled up — on NAS boxes, external hard drives, old laptops, forgotten folders on your Mac. These aren't just files. They're your children's first steps, family celebrations, the faces of people who are no longer with us. But they sit on aging hardware that could fail any day. An old hard drive in a drawer isn't a backup — it's a ticking countdown. Apple Photos changes everything: face recognition, location search, curated memories, available on every device. But getting 50,000 photos in there? That's where it gets painful.</p>
       <div class="card-grid">
         <div class="card">
-          <span class="card-icon">📁</span>
+          <i data-lucide="hard-drive" class="icon-card"></i>
           <h3>Scattered across devices</h3>
           <p>Photos on NAS, external drives, old laptops — hard to find, easy to lose.</p>
         </div>
         <div class="card">
-          <span class="card-icon">⚠️</span>
+          <i data-lucide="alert-triangle" class="icon-card"></i>
           <h3>Hardware doesn't last</h3>
           <p>Hard drives fail. NAS boxes age. One day those memories are just… gone.</p>
         </div>
         <div class="card">
-          <span class="card-icon">🔍</span>
+          <i data-lucide="search-x" class="icon-card"></i>
           <h3>Impossible to search</h3>
-          <p>No face recognition, no location search, no memories — just folders of files.</p>
+          <p>No face recognition, no location search, no curated memories. Your best photos are buried in a folder hierarchy nobody remembers.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why Apple Photos? -->
+  <section>
+    <div class="container">
+      <h2 class="section-title">Why Apple Photos?</h2>
+      <p class="section-subtitle">Once your photos are in Apple Photos, they come alive. They're not just stored — they're searchable, organized, and available everywhere.</p>
+      <div class="card-grid">
+        <div class="card">
+          <i data-lucide="users" class="icon-card"></i>
+          <h3>People Recognition</h3>
+          <p>Find every photo of your daughter, your parents, your best friend — automatically, across decades of photos.</p>
+        </div>
+        <div class="card">
+          <i data-lucide="map-pin" class="icon-card"></i>
+          <h3>Places &amp; Dates</h3>
+          <p>Browse your photos by location and date. Relive that trip to Italy or your kid's birthday — without remembering which folder it's in.</p>
+        </div>
+        <div class="card">
+          <i data-lucide="smartphone" class="icon-card"></i>
+          <h3>Available Everywhere</h3>
+          <p>With iCloud, your entire library syncs across iPhone, iPad, and Mac. Pull up any photo, anytime, from any device.</p>
         </div>
       </div>
     </div>
@@ -130,30 +164,30 @@
   <section>
     <div class="container">
       <h2 class="section-title">Import once. Keep forever.</h2>
-      <p class="section-subtitle">iCloudPhotonator moves your entire photo collection into Apple Photos — safely, incrementally, and without losing a single file.</p>
+      <p class="section-subtitle">Whether your photos live on a Synology NAS, a USB drive, or scattered across folders on your Mac — iCloudPhotonator imports them all into Apple Photos safely, incrementally, and without losing a single file.</p>
       <div class="feature-grid">
         <div class="feature">
-          <span class="feature-icon">🚀</span>
+          <i data-lucide="upload" class="icon-feature"></i>
           <div><h3>Bulk Import</h3><p>Import 10,000 to 100,000+ files in a single run.</p></div>
         </div>
         <div class="feature">
-          <span class="feature-icon">⏸️</span>
+          <i data-lucide="pause-circle" class="icon-feature"></i>
           <div><h3>Pause &amp; Resume</h3><p>Stop and continue anytime — never lose progress.</p></div>
         </div>
         <div class="feature">
-          <span class="feature-icon">🔄</span>
+          <i data-lucide="copy-check" class="icon-feature"></i>
           <div><h3>Smart Deduplication</h3><p>No duplicate imports, ever. Hash-based detection keeps your library clean.</p></div>
         </div>
         <div class="feature">
-          <span class="feature-icon">🛡️</span>
+          <i data-lucide="shield-check" class="icon-feature"></i>
           <div><h3>Auto-Recovery</h3><p>Automatic escalation when Photos.app becomes unresponsive.</p></div>
         </div>
         <div class="feature">
-          <span class="feature-icon">🌍</span>
+          <i data-lucide="globe" class="icon-feature"></i>
           <div><h3>Multilingual</h3><p>Full English and German UI — more languages welcome.</p></div>
         </div>
         <div class="feature">
-          <span class="feature-icon">⚙️</span>
+          <i data-lucide="settings" class="icon-feature"></i>
           <div><h3>Configurable</h3><p>Tune batch sizes, cooldowns, and restart intervals to your hardware.</p></div>
         </div>
       </div>
@@ -166,15 +200,15 @@
       <h2 class="section-title">How it works</h2>
       <p class="section-subtitle">A five-stage pipeline that handles every edge case so you don't have to.</p>
       <div class="pipeline">
-        <div class="pipeline-step"><span class="step-icon">🔎</span><span class="step-label">Scan</span></div>
+        <div class="pipeline-step"><i data-lucide="folder-search" class="icon-pipeline"></i><span class="step-label">Scan</span></div>
         <span class="pipeline-arrow">→</span>
-        <div class="pipeline-step"><span class="step-icon">📂</span><span class="step-label">Stage</span></div>
+        <div class="pipeline-step"><i data-lucide="folder-input" class="icon-pipeline"></i><span class="step-label">Stage</span></div>
         <span class="pipeline-arrow">→</span>
-        <div class="pipeline-step"><span class="step-icon">🧹</span><span class="step-label">Deduplicate</span></div>
+        <div class="pipeline-step"><i data-lucide="filter" class="icon-pipeline"></i><span class="step-label">Deduplicate</span></div>
         <span class="pipeline-arrow">→</span>
-        <div class="pipeline-step"><span class="step-icon">📥</span><span class="step-label">Import</span></div>
+        <div class="pipeline-step"><i data-lucide="image-plus" class="icon-pipeline"></i><span class="step-label">Import</span></div>
         <span class="pipeline-arrow">→</span>
-        <div class="pipeline-step"><span class="step-icon">✅</span><span class="step-label">Cleanup</span></div>
+        <div class="pipeline-step"><i data-lucide="check-circle" class="icon-pipeline"></i><span class="step-label">Cleanup</span></div>
       </div>
       <p class="pipeline-text">Every step is persisted in a local database. Crash? Restart? Network drop? Resume exactly where you left off.</p>
     </div>
@@ -185,7 +219,7 @@
     <div class="container">
       <h2 class="section-title">Ready to bring your photos home?</h2>
       <div style="margin-top: 32px;">
-        <a href="https://github.com/hanselstner/icloudphotonator/releases/latest" class="btn btn-primary">⬇ Download for macOS</a>
+        <a href="https://github.com/hanselstner/icloudphotonator/releases/download/v1.0.0/iCloudPhotonator-v1.0.0-macos.dmg" class="btn btn-primary"><i data-lucide="download" class="icon-inline"></i> Download DMG for macOS</a>
       </div>
       <div class="requirements">
         <span>macOS 13 (Ventura) or later</span>·<span>Apple Photos.app</span>·<span>Free &amp; open source</span>·<span>MIT Licensed</span>
@@ -195,7 +229,7 @@
 
   <!-- Footer -->
   <footer>
-    <p>Made with ❤️ for photo lovers</p>
+    <p>Made with <i data-lucide="heart" class="icon-heart"></i> for photo lovers</p>
     <div class="footer-links">
       <a href="https://github.com/hanselstner/icloudphotonator">GitHub</a>
       <a href="https://github.com/hanselstner/icloudphotonator/blob/main/LICENSE">MIT License</a>
@@ -203,6 +237,7 @@
     </div>
   </footer>
 
+  <script>lucide.createIcons();</script>
 </body>
 </html>
 
