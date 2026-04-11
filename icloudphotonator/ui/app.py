@@ -29,7 +29,7 @@ from icloudphotonator.settings import ImportSettings
 from .bridge import BackendBridge
 
 APP_TITLE = "iCloudPhotonator"
-REPOSITORY_URL = "https://github.com/hanselstner/icloudphototnator"
+REPOSITORY_URL = "https://github.com/hanselstner/icloudphotonator"
 ACCENT_BLUE = "#007AFF"
 DEFAULT_ALBUM_NAME = "iCloudPhotonator Import"
 

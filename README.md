@@ -1,36 +1,44 @@
 # 🖼️ iCloudPhotonator
 
 ![Python](https://img.shields.io/badge/Python-3.13+-blue?logo=python&logoColor=white)
+
 ![macOS](https://img.shields.io/badge/macOS-13%2B-black?logo=apple&logoColor=white)
+
 ![License](https://img.shields.io/badge/License-MIT-green)
+
 ![osxphotos](https://img.shields.io/badge/osxphotos-powered-orange)
+
 ![Status](https://img.shields.io/badge/Status-Stable-brightgreen)
+
 ![Tests](https://img.shields.io/badge/Tests-216%2B%20passing-brightgreen)
+
 ![Build](https://img.shields.io/badge/Build-PyInstaller-blue)
+
 ![Version](https://img.shields.io/badge/Version-v1.0.0-blueviolet)
 
 **Intelligent photo migration helper for macOS.**
 
-> *Screenshots coming soon*
+> Screenshots coming soon
 
----
+## Why This Tool Exists
 
-## What is iCloudPhotonator?
+Most of us started taking digital photos in the early 2000s. Since then, tens of thousands of images and videos have piled up — scattered across external hard drives, NAS boxes, old laptops, forgotten folders. These files are our most valuable digital possessions: childhood photos, family celebrations, anniversaries, vacations, the faces of people who are no longer with us.
 
-iCloudPhotonator is a macOS desktop app that **reliably and controllably** imports large photo and video archives from NAS systems, external drives, or local folders into **Apple Photos**.
+But they sit on aging hardware. An old hard drive in a drawer isn't a backup — it's a ticking countdown. One day it won't spin up, and those memories are gone.
 
-The app was built for users who want to migrate **10,000 to 100,000+ media files** from existing folder structures — such as a Synology, QNAP, or external USB drive — into their Apple Photos library. Instead of a simple drag-and-drop, the import runs as a **multi-stage, fault-tolerant pipeline**:
+Apple Photos changes that equation. It offers face recognition, location search, curated memories, and with iCloud, your photos live on every device you own. When your old photos are *in* Apple Photos, they become part of your daily life again — instead of gathering dust in a folder you'll never open. Your grandmother's smile. Your child's first steps. That trip twenty years ago. These images deserve to be found.
+
+The problem? Apple Photos has no bulk import for 50,000+ files. Drag and drop freezes, Photos.app becomes unstable, duplicates appear everywhere, and when it crashes, you have no idea where you left off.
+
+**iCloudPhotonator solves exactly this.** It imports reliably, can be paused and resumed at any point, and uses intelligent deduplication — so your memories arrive safely, without duplicates, without data loss.
+
+## How It Works
+
+iCloudPhotonator is a macOS desktop app that runs the import as a **multi-stage, fault-tolerant pipeline**:
 
 **Scan → Staging → Duplicate Detection → Import → Cleanup**
 
 Every step is persistently stored in a SQLite database. If the app crashes, the Mac restarts, or the network drops, the import can be resumed exactly where it left off — without importing files twice or losing any.
-
-### Who is this for?
-
-- You have **thousands of photos and videos** on a NAS or external drive
-- You want to bring them **into Apple Photos** (local or with iCloud sync)
-- You need a tool that **doesn't freeze, crash, or forget files** at scale
-- You want to **pause, resume, and monitor** the import
 
 ### What iCloudPhotonator is NOT
 
@@ -73,7 +81,7 @@ Every step is persistently stored in a SQLite database. If the app crashes, the 
 
 ## ⚡ Smart Data Management
 
-> **This is the core of iCloudPhotonator:** The app doesn't blindly push a large archive into Apple Photos all at once. Instead, it works in a controlled, database-backed, fault-tolerant manner.
+> This is the core of iCloudPhotonator: The app doesn't blindly push a large archive into Apple Photos all at once. Instead, it works in a controlled, database-backed, fault-tolerant manner.
 
 ### Scan Phase — Inventory Only, No Copying
 
@@ -148,8 +156,8 @@ Especially with NAS systems or external sources, fault tolerance is critical.
 ### Build the .app
 
 ```bash
-git clone https://github.com/hanselstner/icloudphototnator.git
-cd icloudphototnator
+git clone https://github.com/hanselstner/icloudphotonator.git
+cd icloudphotonator
 uv sync
 uv run pyinstaller iCloudPhotonator.spec
 open dist/iCloudPhotonator.app
@@ -191,15 +199,15 @@ Workflow:
 ## Technical Details
 
 | Area | Technology | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | Backend | Python 3.13 | Orchestration of scan, staging, dedup, persistence, and import |
-| GUI | `customtkinter` | Native desktop interface for macOS |
-| Import Engine | `osxphotos` | Import to Apple Photos incl. album/library management |
+| GUI | customtkinter | Native desktop interface for macOS |
+| Import Engine | osxphotos | Import to Apple Photos incl. album/library management |
 | Persistence | SQLite | Durable storage of jobs, file status, and resume |
-| CLI | `click` | Command-line interface |
+| CLI | click | Command-line interface |
 | i18n | JSON locales | English + German UI translations |
-| Settings | `dataclass` + JSON | Persistent user configuration |
-| Packaging | PyInstaller | Bundling as macOS `.app` |
+| Settings | dataclass + JSON | Persistent user configuration |
+| Packaging | PyInstaller | Bundling as macOS .app |
 
 Key modules:
 
@@ -216,25 +224,25 @@ Key modules:
 ## Open-Source Dependencies
 
 | Package | Version | Purpose | License |
-|---------|---------|---------|---------|
-| [osxphotos](https://github.com/RhetTbull/osxphotos) | ≥5.x | Import engine: Apple Photos communication via AppleScript | MIT |
-| [customtkinter](https://github.com/TomSchimansky/CustomTkinter) | ≥5.2.2 | Desktop GUI: modern Tkinter with dark mode | MIT |
-| [click](https://github.com/pallets/click) | ≥8.x | CLI framework | BSD-3-Clause |
-| [pydantic](https://github.com/pydantic/pydantic) | ≥2.x | Data validation and settings management | MIT |
-| [websockets](https://github.com/python-websockets/websockets) | ≥12.x | WebSocket communication | BSD-3-Clause |
-| [aiohttp](https://github.com/aio-libs/aiohttp) | ≥3.x | Async HTTP client/server | Apache-2.0 |
-| [PyInstaller](https://github.com/pyinstaller/pyinstaller) | ≥6.19 | Packaging as native macOS .app | GPL-2.0 (with bootloader exception) |
-| [pytest](https://github.com/pytest-dev/pytest) | ≥8.x | Test framework | MIT |
-| [pytest-asyncio](https://github.com/pytest-dev/pytest-asyncio) | ≥0.x | Async test support | Apache-2.0 |
-| [PyObjC](https://github.com/ronaldoussoren/pyobjc) | 12.1 | macOS integration: native AppleScript, permissions | MIT |
-| [SQLite](https://sqlite.org/) | (stdlib) | Embedded database for jobs, file status, progress | Public Domain |
-| [hatchling](https://github.com/pypa/hatch) | ≥1.27 | Build system | MIT |
+| --- | --- | --- | --- |
+| osxphotos | ≥5.x | Import engine: Apple Photos communication via AppleScript | MIT |
+| customtkinter | ≥5.2.2 | Desktop GUI: modern Tkinter with dark mode | MIT |
+| click | ≥8.x | CLI framework | BSD-3-Clause |
+| pydantic | ≥2.x | Data validation and settings management | MIT |
+| websockets | ≥12.x | WebSocket communication | BSD-3-Clause |
+| aiohttp | ≥3.x | Async HTTP client/server | Apache-2.0 |
+| PyInstaller | ≥6.19 | Packaging as native macOS .app | GPL-2.0 (with bootloader exception) |
+| pytest | ≥8.x | Test framework | MIT |
+| pytest-asyncio | ≥0.x | Async test support | Apache-2.0 |
+| PyObjC | 12.1 | macOS integration: native AppleScript, permissions | MIT |
+| SQLite | (stdlib) | Embedded database for jobs, file status, progress | Public Domain |
+| hatchling | ≥1.27 | Build system | MIT |
 
 ## Development
 
 ```bash
-git clone https://github.com/hanselstner/icloudphototnator.git
-cd icloudphototnator
+git clone https://github.com/hanselstner/icloudphotonator.git
+cd icloudphotonator
 uv sync
 uv run python -m pytest tests/ -q --tb=short
 ```

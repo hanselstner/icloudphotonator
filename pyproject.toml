@@ -17,9 +17,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/hanselstner/icloudphototnator"
-Repository = "https://github.com/hanselstner/icloudphototnator"
-Issues = "https://github.com/hanselstner/icloudphototnator/issues"
+Homepage = "https://github.com/hanselstner/icloudphotonator"
+Repository = "https://github.com/hanselstner/icloudphotonator"
+Issues = "https://github.com/hanselstner/icloudphotonator/issues"
 
 [dependency-groups]
 dev = [

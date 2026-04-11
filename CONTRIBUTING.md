@@ -7,8 +7,8 @@ Thank you for your interest in contributing to iCloudPhotonator! 🎉
 1. **Install Python 3.13+** and [uv](https://docs.astral.sh/uv/)
 2. **Clone the repo**:
    ```bash
-   git clone https://github.com/hanselstner/icloudphototnator.git
-   cd icloudphototnator
+   git clone https://github.com/hanselstner/icloudphotonator.git
+   cd icloudphotonator
    ```
 3. **Install dependencies**:
    ```bash
