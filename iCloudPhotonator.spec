@@ -27,6 +27,7 @@ def _dedupe(items):
 datas = [
     (str(CUSTOMTKINTER_PATH), "customtkinter"),
     (os.path.join("icloudphotonator", "locales"), "locales"),  # i18n translations
+    (str(PROJECT_ROOT / "assets" / "icon_512.png"), "assets"),
 ]
 binaries = []
 hiddenimports = [
