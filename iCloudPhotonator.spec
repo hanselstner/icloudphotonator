@@ -6,7 +6,7 @@ import customtkinter
 from PyInstaller.utils.hooks import collect_all
 
 APP_NAME = "iCloudPhotonator"
-APP_VERSION = "0.1.0"
+APP_VERSION = "1.0.0"
 BUNDLE_IDENTIFIER = "com.hanselstner.icloudphotonator"
 PROJECT_ROOT = Path(SPECPATH)
 ENTRYPOINT = PROJECT_ROOT / "icloudphotonator" / "__main__.py"
@@ -167,7 +167,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name=f'{APP_NAME}.app',
-    icon=None,
+    icon=str(PROJECT_ROOT / 'assets' / 'iCloudPhotonator.icns'),
     bundle_identifier=BUNDLE_IDENTIFIER,
     version=APP_VERSION,
     info_plist={
@@ -177,8 +177,8 @@ app = BUNDLE(
         'CFBundleShortVersionString': APP_VERSION,
         'LSMinimumSystemVersion': '13.0',
         'NSHighResolutionCapable': True,
-        'NSAppleEventsUsageDescription': 'iCloudPhotonator benötigt Zugriff auf die Fotos-App, um Bilder und Videos zu importieren.',
-        'NSPhotoLibraryUsageDescription': 'iCloudPhotonator benötigt Zugriff auf Ihre Fotomediathek, um Bilder und Videos zu importieren.',
+        'NSAppleEventsUsageDescription': 'iCloudPhotonator needs access to the Photos app to import photos and videos.',
+        'NSPhotoLibraryUsageDescription': 'iCloudPhotonator needs access to your photo library to import photos and videos.',
         'CFBundleDocumentTypes': [],
     },
 )
