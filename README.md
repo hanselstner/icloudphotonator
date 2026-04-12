@@ -153,6 +153,22 @@ Especially with NAS systems or external sources, fault tolerance is critical.
 - `exiftool` recommended for robust metadata processing
 - Python **3.13+** if you want to build the app or use the CLI
 
+### ⚠️ macOS Security Warning (First Launch Only)
+
+Since iCloudPhotonator is not distributed through the Mac App Store, macOS will display a security warning on first launch. This is normal for all open-source macOS apps.
+
+**To open the app:**
+1. **Right-click** (or Control-click) on iCloudPhotonator in your Applications folder
+2. Select **"Open"** from the context menu
+3. Click **"Open"** in the confirmation dialog
+
+You only need to do this once — macOS remembers your choice.
+
+**Alternative (Terminal):**
+```bash
+xattr -cr /Applications/iCloudPhotonator.app
+```
+
 ### Build the .app
 
 ```bash
