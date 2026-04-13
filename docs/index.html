@@ -6,7 +6,7 @@
   <title>iCloudPhotonator — Bring your photo memories home to Apple Photos</title>
   <meta name="description" content="Bulk-import thousands of photos & videos from NAS or external drives into Apple Photos — reliably, pausably, without duplicates.">
   <meta name="theme-color" content="#0d1117">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖼️</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22 fill=%22none%22 stroke=%22%23007AFF%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><rect x=%228%22 y=%2212%22 width=%2248%22 height=%2240%22 rx=%224%22/><polyline points=%2216,44 28,32 40,40%22/><polyline points=%2236,36 44,28 52,36%22/><circle cx=%2222%22 cy=%2224%22 r=%223%22/><polyline points=%2232,4 32,14%22/><polyline points=%2226,8 32,2 38,8%22/></svg>">
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -83,6 +83,20 @@
     .icon-inline { width: 20px; height: 20px; vertical-align: middle; }
     .icon-heart { width: 16px; height: 16px; color: #e74c3c; vertical-align: middle; }
 
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
+    .modal-overlay.active { display: flex; }
+    .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); max-width: 560px; width: 90%; padding: 40px 36px; position: relative; animation: slideUp 0.3s ease; }
+    .modal h2 { font-size: 1.4rem; margin-bottom: 16px; }
+    .modal p { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 16px; line-height: 1.7; }
+    .modal strong { color: var(--text); }
+    .modal ol { color: var(--text-muted); font-size: 0.95rem; margin: 12px 0 20px 20px; line-height: 1.8; }
+    .modal ol li { margin-bottom: 4px; }
+    .modal .modal-buttons { display: flex; gap: 12px; margin-top: 24px; }
+    .modal .modal-buttons .btn { flex: 1; justify-content: center; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
     /* Responsive */
     @media (max-width: 640px) {
       .hero { padding: 64px 16px 48px; }
@@ -90,6 +104,7 @@
       .btn { padding: 12px 24px; font-size: 0.95rem; }
       .pipeline-arrow { display: none; }
       .pipeline { gap: 12px; }
+      .modal { padding: 28px 20px; }
     }
   </style>
 </head>
@@ -98,17 +113,54 @@
   <!-- Hero -->
   <header class="hero">
     <div class="container">
-      <i data-lucide="image" class="icon-hero"></i>
+      <svg class="icon-hero" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="6" y="14" width="52" height="40" rx="5"/>
+        <polyline points="14,46 28,32 42,42"/>
+        <polyline points="38,38 46,28 56,40"/>
+        <circle cx="22" cy="26" r="4"/>
+        <polyline points="32,4 32,16"/>
+        <polyline points="25,9 32,2 39,9"/>
+      </svg>
       <h1>iCloudPhotonator</h1>
       <p class="subtitle">Bring your photo memories home to Apple&nbsp;Photos</p>
       <p class="tagline">Bulk-import thousands of photos &amp; videos from your NAS, external drives, or local folders into Apple Photos — reliably, pausably, without duplicates.</p>
       <div class="btn-group">
-        <a href="https://github.com/hanselstner/icloudphotonator/releases/download/v1.0.0/iCloudPhotonator-v1.0.0-macos.dmg" class="btn btn-primary"><i data-lucide="download" class="icon-inline"></i> Download DMG for macOS</a>
+        <a href="#" onclick="openDownloadModal(event)" class="btn btn-primary"><i data-lucide="download" class="icon-inline"></i> Download DMG for macOS</a>
         <a href="https://github.com/hanselstner/icloudphotonator" class="btn btn-outline">View on GitHub</a>
       </div>
       <p class="meta">Requires macOS 13+ · Free &amp; Open Source · MIT License</p>
     </div>
   </header>
+
+  <!-- Installation -->
+  <section id="installation">
+    <div class="container">
+      <h2 class="section-title">Installation</h2>
+      <p class="section-subtitle">iCloudPhotonator is a free, open-source macOS app. Since it's not from the App Store, macOS will ask you to confirm on first launch.</p>
+      <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+        <div class="card" style="text-align:center;">
+          <i data-lucide="download" class="icon-card"></i>
+          <h3>1. Download</h3>
+          <p>Download the DMG file and open it.</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <i data-lucide="folder-input" class="icon-card"></i>
+          <h3>2. Install</h3>
+          <p>Drag iCloudPhotonator to your Applications folder.</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <i data-lucide="mouse-pointer-click" class="icon-card"></i>
+          <h3>3. First Launch</h3>
+          <p>Right-click → Open → Click 'Open' in the dialog. Only needed once.</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <i data-lucide="check-circle" class="icon-card"></i>
+          <h3>4. Ready</h3>
+          <p>Grant Automation permission and start importing!</p>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- Problem -->
   <section>
@@ -219,13 +271,34 @@
     <div class="container">
       <h2 class="section-title">Ready to bring your photos home?</h2>
       <div style="margin-top: 32px;">
-        <a href="https://github.com/hanselstner/icloudphotonator/releases/download/v1.0.0/iCloudPhotonator-v1.0.0-macos.dmg" class="btn btn-primary"><i data-lucide="download" class="icon-inline"></i> Download DMG for macOS</a>
+        <a href="#" onclick="openDownloadModal(event)" class="btn btn-primary"><i data-lucide="download" class="icon-inline"></i> Download DMG for macOS</a>
       </div>
       <div class="requirements">
         <span>macOS 13 (Ventura) or later</span>·<span>Apple Photos.app</span>·<span>Free &amp; open source</span>·<span>MIT Licensed</span>
       </div>
     </div>
   </section>
+
+  <!-- Download Modal -->
+  <div class="modal-overlay" id="downloadModal">
+    <div class="modal">
+      <h2>⚠️ Important: First Launch Instructions</h2>
+      <p>Since iCloudPhotonator is an open-source app and not distributed through the Mac App Store, macOS will show a security warning on first launch. This is normal and expected.</p>
+      <p><strong>How to open the app:</strong></p>
+      <ol>
+        <li>Open the downloaded DMG and drag the app to <strong>Applications</strong></li>
+        <li><strong>Right-click</strong> (or Control-click) on iCloudPhotonator in Applications</li>
+        <li>Click <strong>"Open"</strong> from the context menu</li>
+        <li>In the dialog that appears, click <strong>"Open"</strong> again</li>
+      </ol>
+      <p>You only need to do this once — macOS will remember your choice.</p>
+      <p><strong>Why does this happen?</strong><br>Apple requires a $99/year Developer Certificate to bypass this warning. As a free, open-source project, we've chosen to keep the app free instead. The source code is fully available on <a href="https://github.com/hanselstner/icloudphotonator">GitHub</a> for review.</p>
+      <div class="modal-buttons">
+        <a href="https://github.com/hanselstner/icloudphotonator/releases/download/v1.0.0/iCloudPhotonator-v1.0.0-macos.dmg" class="btn btn-primary" onclick="closeDownloadModal()"><i data-lucide="download" class="icon-inline"></i> Download DMG</a>
+        <button class="btn btn-outline" onclick="closeDownloadModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Footer -->
   <footer>
@@ -237,7 +310,12 @@
     </div>
   </footer>
 
-  <script>lucide.createIcons();</script>
+  <script>
+    lucide.createIcons();
+    function openDownloadModal(e) { e.preventDefault(); document.getElementById('downloadModal').classList.add('active'); }
+    function closeDownloadModal() { document.getElementById('downloadModal').classList.remove('active'); }
+    document.getElementById('downloadModal').addEventListener('click', function(e) { if (e.target === this) closeDownloadModal(); });
+  </script>
 </body>
 </html>
 
