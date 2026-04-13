@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#007AFF"/>
+      <stop offset="100%" stop-color="#0055CC"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded rectangle background -->
+  <rect x="80" y="80" width="864" height="864" rx="180" ry="180" fill="url(#bg)"/>
+
+  <!-- Photo frame (white rounded rect) -->
+  <rect x="220" y="320" width="584" height="480" rx="40" ry="40"
+        fill="none" stroke="white" stroke-width="32"/>
+
+  <!-- Mountain landscape -->
+  <!-- Big mountain -->
+  <polygon points="320,720 512,480 704,720" fill="white" opacity="0.95"/>
+  <!-- Small mountain -->
+  <polygon points="480,720 600,560 720,720" fill="white" opacity="0.7"/>
+
+  <!-- Sun -->
+  <circle cx="380" cy="420" r="50" fill="white" opacity="0.95"/>
+
+  <!-- Upload arrow shaft -->
+  <line x1="512" y1="120" x2="512" y2="300" stroke="white" stroke-width="36" stroke-linecap="round"/>
+  <!-- Upload arrow head -->
+  <polyline points="420,210 512,120 604,210" fill="none" stroke="white" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+

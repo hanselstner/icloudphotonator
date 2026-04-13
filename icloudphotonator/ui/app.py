@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import webbrowser
 from pathlib import Path
 
@@ -12,6 +13,7 @@ try:
     from tkinter import messagebox
 
     import customtkinter as ctk
+    from PIL import Image, ImageTk
 except ModuleNotFoundError as exc:
     tk = None
     filedialog = None
@@ -35,18 +37,38 @@ DEFAULT_ALBUM_NAME = "iCloudPhotonator Import"
 
 
 def _get_version() -> str:
-    """Read version from pyproject.toml, fall back to 0.3.0."""
+    """Read version from package metadata or pyproject.toml."""
+    # First try: package metadata (works in PyInstaller bundle)
+    try:
+        from icloudphotonator import __version__
+        return __version__
+    except (ImportError, AttributeError):
+        pass
+    # Second try: pyproject.toml (works in development)
     try:
         toml_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
         if toml_path.exists():
             for line in toml_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line.startswith("version"):
-                    # version = "0.3.0"
                     return line.split("=", 1)[1].strip().strip('"').strip("'")
     except Exception:
         pass
-    return "0.3.0"
+    return "1.0.0"
+
+
+def _get_app_icon_path() -> Path:
+    """Find the app icon PNG for use in the UI."""
+    # In PyInstaller bundle
+    if hasattr(sys, '_MEIPASS'):
+        icon_path = Path(sys._MEIPASS) / "assets" / "icon_512.png"
+        if icon_path.exists():
+            return icon_path
+    # In development
+    icon_path = Path(__file__).resolve().parent.parent / "assets" / "icon_512.png"
+    if icon_path.exists():
+        return icon_path
+    return None
 
 
 APP_VERSION = _get_version()
@@ -698,12 +720,20 @@ else:
             left.pack(side="left", fill="x", expand=True)
             icon_row = ctk.CTkFrame(left, fg_color="transparent")
             icon_row.pack(anchor="w")
-            icon_frame = ctk.CTkFrame(
-                icon_row, width=32, height=32, corner_radius=16, fg_color=ACCENT_BLUE,
-            )
-            icon_frame.pack(side="left", padx=(0, 10))
-            icon_frame.pack_propagate(False)
-            ctk.CTkLabel(icon_frame, text="📸", font=ctk.CTkFont(size=14)).pack(expand=True)
+            # Load app icon
+            icon_path = _get_app_icon_path()
+            if icon_path:
+                try:
+                    pil_img = Image.open(str(icon_path)).resize((32, 32), Image.LANCZOS)
+                    self._header_icon_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(32, 32))
+                    ctk.CTkLabel(icon_row, image=self._header_icon_img, text="").pack(side="left", padx=(0, 10))
+                except Exception:
+                    # Fallback: show text
+                    ctk.CTkLabel(icon_row, text="iP", font=ctk.CTkFont(size=14, weight="bold"),
+                                 text_color=ACCENT_BLUE).pack(side="left", padx=(0, 10))
+            else:
+                ctk.CTkLabel(icon_row, text="iP", font=ctk.CTkFont(size=14, weight="bold"),
+                             text_color=ACCENT_BLUE).pack(side="left", padx=(0, 10))
             ctk.CTkLabel(
                 icon_row, text=APP_TITLE, font=ctk.CTkFont(size=18, weight="bold"),
             ).pack(side="left")
