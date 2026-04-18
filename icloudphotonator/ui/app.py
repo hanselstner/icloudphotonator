@@ -213,6 +213,13 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
             _raise_missing_ui_support()
 
 
+    class OnboardingDialog:
+        """Placeholder when Tk support is unavailable."""
+
+        def __init__(self, *args, **kwargs) -> None:
+            _raise_missing_ui_support()
+
+
     class ICloudPhotonatorApp:
         """Placeholder app that fails with a helpful runtime error."""
 
@@ -221,7 +228,9 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
 
         def _show_onboarding(self) -> None:
             if not _check_onboarding_done():
-                _mark_onboarding_done()
+                dialog = OnboardingDialog(self)
+                self.wait_window(dialog)
+                return
 
             self.add_log(t("log.checking_automation"))
             if _check_automation_permission():
