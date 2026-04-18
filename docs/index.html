@@ -150,8 +150,8 @@
         </div>
         <div class="card" style="text-align:center;">
           <i data-lucide="mouse-pointer-click" class="icon-card"></i>
-          <h3>3. First Launch</h3>
-          <p>Right-click → Open → Click 'Open' in the dialog. Only needed once.</p>
+          <h3>3. Launch</h3>
+          <p>Double-click to launch. Grant Automation permission when prompted.</p>
         </div>
         <div class="card" style="text-align:center;">
           <i data-lucide="check-circle" class="icon-card"></i>
@@ -282,17 +282,22 @@
   <!-- Download Modal -->
   <div class="modal-overlay" id="downloadModal">
     <div class="modal">
-      <h2>⚠️ Important: First Launch Instructions</h2>
-      <p>Since iCloudPhotonator is an open-source app and not distributed through the Mac App Store, macOS will show a security warning on first launch. This is normal and expected.</p>
-      <p><strong>How to open the app:</strong></p>
-      <ol>
-        <li>Open the downloaded DMG and drag the app to <strong>Applications</strong></li>
-        <li><strong>Right-click</strong> (or Control-click) on iCloudPhotonator in Applications</li>
-        <li>Click <strong>"Open"</strong> from the context menu</li>
-        <li>In the dialog that appears, click <strong>"Open"</strong> again</li>
-      </ol>
-      <p>You only need to do this once — macOS will remember your choice.</p>
-      <p><strong>Why does this happen?</strong><br>Apple requires a $99/year Developer Certificate to bypass this warning. As a free, open-source project, we've chosen to keep the app free instead. The source code is fully available on <a href="https://github.com/hanselstner/icloudphotonator">GitHub</a> for review.</p>
+      <h2>Installation</h2>
+      <div class="modal-steps">
+        <div class="modal-step">
+          <span class="step-number">1</span>
+          <p>Open the downloaded DMG file</p>
+        </div>
+        <div class="modal-step">
+          <span class="step-number">2</span>
+          <p>Drag iCloudPhotonator to your Applications folder</p>
+        </div>
+        <div class="modal-step">
+          <span class="step-number">3</span>
+          <p>Double-click to launch — that's it!</p>
+        </div>
+      </div>
+      <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 16px;">Requires macOS 13 (Ventura) or later · Signed & Notarized by Apple</p>
       <div class="modal-buttons">
         <a href="https://github.com/hanselstner/icloudphotonator/releases/download/v1.0.0/iCloudPhotonator-v1.0.0-macos.dmg" class="btn btn-primary" onclick="closeDownloadModal()"><i data-lucide="download" class="icon-inline"></i> Download DMG</a>
         <button class="btn btn-outline" onclick="closeDownloadModal()">Cancel</button>
