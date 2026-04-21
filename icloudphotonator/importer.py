@@ -102,12 +102,23 @@ class PhotoImporter:
         library: Path | None = None,
     ) -> None:
         import concurrent.futures
+        import inspect
+        import os
 
         import_cli = self._get_import_cli()
         self._verbose_log: list[str] = []
 
         def _verbose_callback(msg: object) -> None:
             self._verbose_log.append(str(msg))
+
+        # Only pass verbose if the function signature supports it. Avoids
+        # relying on try/except TypeError which can mask unrelated errors
+        # and produce misleading chained exceptions.
+        try:
+            sig = inspect.signature(import_cli)
+            supports_verbose = "verbose" in sig.parameters
+        except (TypeError, ValueError):
+            supports_verbose = False
 
         import_kwargs = dict(
             files_or_dirs=tuple(str(path) for path in file_paths),
@@ -116,21 +127,27 @@ class PhotoImporter:
             exiftool=use_exiftool,
             no_progress=True,
             report=str(report_path),
-            verbose=_verbose_callback,
         )
+        if supports_verbose:
+            import_kwargs["verbose"] = _verbose_callback
         if album:
             import_kwargs["album"] = (album,)
         if library is not None:
             import_kwargs["library"] = str(library)
 
+        # Ensure osxphotos can write its internal database files. In
+        # PyInstaller bundles cwd may point to a read-only temp dir, which
+        # causes "unable to open database file" errors from osxphotos.
+        original_cwd = os.getcwd()
+        writable_dir = Path.home() / ".icloudphotonator"
+        writable_dir.mkdir(parents=True, exist_ok=True)
+
         def _do_import() -> None:
+            os.chdir(str(writable_dir))
             try:
                 import_cli(**import_kwargs)
-            except TypeError:
-                # verbose kwarg not supported by this version of osxphotos
-                import_kwargs.pop("verbose", None)
-                self._verbose_log.clear()
-                import_cli(**import_kwargs)
+            finally:
+                os.chdir(original_cwd)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_do_import)
