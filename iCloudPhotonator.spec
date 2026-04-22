@@ -113,6 +113,7 @@ for package_name in (
     "textx",
     "arpeggio",
     "bpylist2",
+    "PIL",
 ):
     package_datas, package_binaries, package_hiddenimports = collect_all(package_name)
     datas += package_datas
