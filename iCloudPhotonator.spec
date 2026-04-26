@@ -115,6 +115,9 @@ hiddenimports = [
     "packaging.specifiers",
     "pathvalidate",
     "ptpython",
+    "darkdetect",
+    "annotated_types",
+    "appdirs",
 ]
 
 for package_name in (
@@ -147,6 +150,10 @@ for package_name in (
     "wurlitzer",
     "objexplore",
     "ptpython",
+    "darkdetect",
+    "annotated_types",
+    "cffi",
+    "appdirs",
 ):
     package_datas, package_binaries, package_hiddenimports = collect_all(package_name)
     datas += package_datas
