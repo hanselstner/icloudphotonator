@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
+import os
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
+
+
+logger = logging.getLogger("icloudphotonator")
 
 
 PICTURES_LIBRARY_DIR = Path.home() / "Pictures"
@@ -59,6 +65,17 @@ class PhotoImporter:
         if not file_paths:
             return ImportResult(True, 0, 0, 0, [], None)
 
+        logger.info(
+            "import_batch called: %d files, skip_dups=%s, auto_live=%s, exiftool=%s, album=%r, library=%s, timeout=%ds",
+            len(file_paths), skip_dups, auto_live, use_exiftool, album, library, timeout,
+        )
+        logger.debug("Files: %s", [str(p) for p in file_paths[:5]] + (["..."] if len(file_paths) > 5 else []))
+        logger.debug(
+            "Runtime: python=%s, frozen=%s, MEIPASS=%s, cwd=%s, HOME=%s",
+            sys.executable, getattr(sys, "frozen", False),
+            getattr(sys, "_MEIPASS", "not bundled"), os.getcwd(), Path.home(),
+        )
+
         target_report_dir = Path(report_dir) if report_dir else Path(tempfile.mkdtemp(prefix="icloudphotonator-report-"))
         target_report_dir.mkdir(parents=True, exist_ok=True)
         report_path = target_report_dir / f"import-report-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.csv"
@@ -66,6 +83,9 @@ class PhotoImporter:
         try:
             self._run_import(file_paths, skip_dups, auto_live, use_exiftool, album, report_path, timeout, library)
         except Exception as exc:
+            import traceback
+            logger.error("Import failed with exception: %s: %s", type(exc).__name__, exc)
+            logger.error("Full traceback:\n%s", traceback.format_exc())
             # Walk the full exception chain to capture root causes
             parts: list[str] = []
             current: BaseException | None = exc
@@ -81,6 +101,7 @@ class PhotoImporter:
                 error_msg = f"{type(exc).__module__}.{type(exc).__name__}"
             if "Abort" in type(exc).__name__ and not parts:
                 error_msg = "osxphotos aborted — exiftool may be missing (https://exiftool.org/)"
+            logger.error("Resolved error message for report: %s", error_msg)
             return self._result_from_report(
                 report_path=report_path,
                 fallback_success=False,
@@ -135,17 +156,72 @@ class PhotoImporter:
         if library is not None:
             import_kwargs["library"] = str(library)
 
-        # Ensure osxphotos can write its internal database files. In
-        # PyInstaller bundles cwd may point to a read-only temp dir, which
-        # causes "unable to open database file" errors from osxphotos.
+        # Ensure osxphotos' data directory exists and is writable.
+        # osxphotos uses xdg_base_dirs.xdg_data_home() / "osxphotos" for its
+        # internal SQLiteKVStore. If this directory doesn't exist or can't be
+        # created, every import fails with "unable to open database file".
+        try:
+            from xdg_base_dirs import xdg_data_home
+            osxphotos_data_dir = xdg_data_home() / "osxphotos"
+        except ImportError:
+            osxphotos_data_dir = Path.home() / ".local" / "share" / "osxphotos"
+
+        try:
+            osxphotos_data_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(
+                "osxphotos data dir: %s (exists=%s, writable=%s)",
+                osxphotos_data_dir,
+                osxphotos_data_dir.exists(),
+                os.access(str(osxphotos_data_dir), os.W_OK),
+            )
+        except OSError as e:
+            logger.error("Cannot create osxphotos data dir %s: %s", osxphotos_data_dir, e)
+            osxphotos_data_dir = Path.home() / ".icloudphotonator" / "osxphotos_data"
+            osxphotos_data_dir.mkdir(parents=True, exist_ok=True)
+            logger.warning("Using fallback data dir: %s", osxphotos_data_dir)
+
+        # Verify sqlite3 can actually create a database in this directory.
+        import sqlite3
+        test_db_path = osxphotos_data_dir / "_test_write.db"
+        try:
+            conn = sqlite3.connect(str(test_db_path))
+            conn.execute("CREATE TABLE IF NOT EXISTS test (id INTEGER)")
+            conn.close()
+            test_db_path.unlink(missing_ok=True)
+            logger.info("SQLite write test passed in %s", osxphotos_data_dir)
+        except Exception as e:
+            logger.error("SQLite write test FAILED in %s: %s", osxphotos_data_dir, e)
+            fallback_dir = Path.home() / ".icloudphotonator" / "osxphotos_data"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                test_db2 = fallback_dir / "_test_write.db"
+                conn = sqlite3.connect(str(test_db2))
+                conn.execute("CREATE TABLE IF NOT EXISTS test (id INTEGER)")
+                conn.close()
+                test_db2.unlink(missing_ok=True)
+                logger.info("Fallback SQLite write test passed in %s", fallback_dir)
+                # Override XDG_DATA_HOME so osxphotos uses our fallback location.
+                os.environ["XDG_DATA_HOME"] = str(fallback_dir.parent)
+                logger.info("Set XDG_DATA_HOME=%s", fallback_dir.parent)
+                osxphotos_data_dir = fallback_dir
+            except Exception as e2:
+                logger.error("Fallback SQLite write test ALSO FAILED: %s", e2)
+
+        # Also change CWD to a writable dir (belt and suspenders).
         original_cwd = os.getcwd()
-        writable_dir = Path.home() / ".icloudphotonator"
-        writable_dir.mkdir(parents=True, exist_ok=True)
 
         def _do_import() -> None:
-            os.chdir(str(writable_dir))
+            os.chdir(str(osxphotos_data_dir))
             try:
+                logger.info(
+                    "Starting import_cli with kwargs: %s",
+                    {k: v for k, v in import_kwargs.items() if k != "verbose"},
+                )
                 import_cli(**import_kwargs)
+                logger.info("import_cli completed successfully")
+            except Exception as e:
+                logger.error("import_cli failed: %s: %s", type(e).__name__, e)
+                raise
             finally:
                 os.chdir(original_cwd)
 
