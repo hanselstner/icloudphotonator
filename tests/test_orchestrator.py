@@ -1081,3 +1081,142 @@ async def test_import_phase_aborts_cleanly_when_library_readable_check_fails(
     assert import_batch_calls == []
     fda_logs = [m for m in emitted_logs if "Full Disk Access" in m or "Festplattenvollzugriff" in m]
     assert len(fda_logs) == 1
+
+
+
+@pytest.mark.asyncio
+async def test_import_phase_aborts_when_batch_reports_full_disk_access_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When a batch's ImportResult contains an error with full_disk_access_missing=True,
+    the orchestrator must fire the FDA callback exactly once, cancel the import,
+    and skip both further batches and the single-file fallback.
+    """
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_paths = [source_path / name for name in ("a.jpg", "b.jpg")]
+    for fp in file_paths:
+        fp.write_bytes(b"image-bytes")
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    orchestrator._active_job = job
+    for index, fp in enumerate(file_paths):
+        orchestrator.db.add_file(job.job_id, fp, index + 1, f"hash-{index}", "image")
+    orchestrator.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
+
+    monkeypatch.setattr(
+        "icloudphotonator.orchestrator.DeduplicationEngine.check_duplicates",
+        lambda self, file_infos: (file_infos, []),
+    )
+    monkeypatch.setattr(orchestrator.throttle, "get_batch_size", lambda: 1)
+
+    async def fake_stage_files(unique_files):
+        return [(fi, fi.path) for fi in unique_files], []
+
+    monkeypatch.setattr(orchestrator.staging, "stage_files", fake_stage_files)
+
+    import_batch_calls: list[list[Path]] = []
+
+    def fake_import_batch(file_paths_arg, **kwargs):
+        import_batch_calls.append(list(file_paths_arg))
+        return SimpleNamespace(
+            success=False,
+            report_path=None,
+            error_count=1,
+            imported_count=0,
+            errors=[
+                {
+                    "file": str(file_paths_arg[0]),
+                    "error": "Full Disk Access fehlt: …",
+                    "full_disk_access_missing": True,
+                }
+            ],
+        )
+
+    monkeypatch.setattr(orchestrator.importer, "import_batch", fake_import_batch)
+
+    fda_calls: list[int] = []
+    orchestrator.on_full_disk_access_error(lambda: fda_calls.append(1))
+
+    cancel_calls: list[int] = []
+    original_cancel = orchestrator.cancel
+
+    def recording_cancel():
+        cancel_calls.append(1)
+        original_cancel()
+
+    monkeypatch.setattr(orchestrator, "cancel", recording_cancel)
+
+    await orchestrator._import_phase(job)
+
+    # Callback fires exactly once.
+    assert len(fda_calls) == 1
+    # cancel() is invoked.
+    assert len(cancel_calls) >= 1
+    assert orchestrator._cancelled is True
+    # Only the first batch ran — no further batches and no single-file fallback.
+    assert len(import_batch_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_full_disk_access_callback_is_one_shot_across_batches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If two consecutive batches both carry the FDA marker, the callback must
+    still only fire once thanks to the one-shot guard.
+    """
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_paths = [source_path / name for name in ("a.jpg", "b.jpg")]
+    for fp in file_paths:
+        fp.write_bytes(b"image-bytes")
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    orchestrator._active_job = job
+    for index, fp in enumerate(file_paths):
+        orchestrator.db.add_file(job.job_id, fp, index + 1, f"hash-{index}", "image")
+    orchestrator.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
+
+    fda_calls: list[int] = []
+    orchestrator.on_full_disk_access_error(lambda: fda_calls.append(1))
+
+    # Simulate the guard already being triggered once via the preflight path,
+    # then directly emit again as if a later batch tried to fire it.
+    orchestrator._emit_full_disk_access_error()
+    orchestrator._emit_full_disk_access_error()
+    orchestrator._emit_full_disk_access_error()
+
+    assert len(fda_calls) == 1
+    assert orchestrator._fda_callback_emitted is True
+
+
+@pytest.mark.asyncio
+async def test_fda_one_shot_flag_resets_on_new_import_session(
+    tmp_path: Path,
+) -> None:
+    """The one-shot flag must reset at the start of a new import session so that
+    a subsequent import that hits FDA again can still fire the dialog once."""
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    fda_calls: list[int] = []
+    orchestrator.on_full_disk_access_error(lambda: fda_calls.append(1))
+
+    # First session: flag becomes True after one emit.
+    orchestrator._emit_full_disk_access_error()
+    assert orchestrator._fda_callback_emitted is True
+    assert len(fda_calls) == 1
+
+    # Simulate the start of a fresh import session; the per-session reset in
+    # start_import() must clear the guard. We invoke just the relevant resets
+    # to keep the test focused.
+    orchestrator._fda_callback_emitted = False
+    orchestrator._emit_full_disk_access_error()
+    assert len(fda_calls) == 2

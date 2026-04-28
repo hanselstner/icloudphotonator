@@ -78,6 +78,7 @@ class ImportOrchestrator:
         self._log_callbacks: list[Callable[[str], None]] = []
         self._permission_error_callbacks: list[Callable[[], None]] = []
         self._full_disk_access_error_callbacks: list[Callable[[], None]] = []
+        self._fda_callback_emitted = False
         self._active_job: Job | None = None
         self._network_monitor: NetworkMonitor | None = None
         self._network_pause_requested = False
@@ -95,6 +96,7 @@ class ImportOrchestrator:
         self._paused.set()
         self._paused_thread.set()
         self._cancel_thread.clear()
+        self._fda_callback_emitted = False
         self.staging.reset_cumulative_staged_count()
         job = Job(self.db, job_id) if job_id else Job(self.db)
         self._active_job = job
@@ -343,6 +345,12 @@ class ImportOrchestrator:
                 self.logger.exception("Permission error callback failed")
 
     def _emit_full_disk_access_error(self) -> None:
+        # One-shot guard: never fire more than once per import session,
+        # regardless of whether triggered by preflight or by a mid-session
+        # batch reporting full_disk_access_missing.
+        if self._fda_callback_emitted:
+            return
+        self._fda_callback_emitted = True
         for callback in list(self._full_disk_access_error_callbacks):
             try:
                 callback()
@@ -654,6 +662,20 @@ class ImportOrchestrator:
                             "Batch error: file=%s msg=%s",
                             err.get("file"), err.get("error"),
                         )
+
+                # Mid-session Full Disk Access revocation detection.
+                # The importer marks errors with full_disk_access_missing=True
+                # when it detects sqlite "unable to open database file" inside a
+                # .photoslibrary. Surface this as a one-shot UI dialog and abort
+                # the import without falling back to single-file retries.
+                if any(
+                    err.get("full_disk_access_missing")
+                    for err in (getattr(result, "errors", None) or [])
+                ):
+                    self._emit_log(t("error.full_disk_access_missing"))
+                    self._emit_full_disk_access_error()
+                    self.cancel()
+                    break
 
                 # If the batch crashed (no report generated), retry each file individually
                 if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
