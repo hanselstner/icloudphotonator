@@ -5,8 +5,8 @@
 # Steps:
 #   1. Clean PyInstaller build
 #   2. Dependency audit (verify required packages are bundled)
-#   3. App launch smoke test (catches ModuleNotFoundError)
-#   4. Code sign (.so/.dylib, Python framework, main binary, .app bundle)
+#   3. Code sign (.so/.dylib, Python framework, main binary, .app bundle)
+#   4. App launch smoke test (catches import / dynamic-loader errors on signed bundle)
 #   5. Build + sign DMG
 #   6. Notarize + staple + validate
 #   7. Upload DMG to GitHub Release (replaces existing asset)
@@ -31,7 +31,7 @@ DEFAULT_VERSION='1.0.0'
 REQUIRED_PACKAGES=(
   PIL click customtkinter darkdetect osxphotos pydantic annotated_types bs4
   soupsieve bitmath mac_alias mako markdown2 more_itertools objexplore
-  packaging pathvalidate ptpython pytimeparse shortuuid tenacity wurlitzer
+  packaging pathvalidate ptpython pytimeparse2 shortuuid tenacity wurlitzer
   xdg_base_dirs cffi appdirs rich textx toml yaml requests certifi
   charset_normalizer idna urllib3 psutil photoscript wrapt markupsafe
   wcwidth prompt_toolkit typing_extensions
@@ -94,21 +94,30 @@ uv run pyinstaller --noconfirm --clean iCloudPhotonator.spec
 # 2. Dependency audit
 # ---------------------------------------------------------------------------
 log "Step 2/8 — Dependency audit (${#REQUIRED_PACKAGES[@]} packages)"
-INTERNAL_DIR="$APP_PATH/Contents/Resources/_internal"
-if [[ ! -d "$INTERNAL_DIR" ]]; then
-  # PyInstaller >=6.x layout
-  INTERNAL_DIR="$APP_PATH/Contents/Frameworks"
-fi
-[[ -d "$INTERNAL_DIR" ]] || fail "Could not locate bundle internals under $APP_PATH/Contents"
+EXE_PATH="$APP_PATH/Contents/MacOS/$APP_NAME"
+[[ -f "$EXE_PATH" ]] || fail "Could not locate executable at $EXE_PATH"
+
+# PyInstaller embeds pure-Python packages inside the PYZ archive appended
+# to the executable; only compiled extensions are written to disk. Inspect
+# both locations so the audit doesn't false-negative on PYZ-only packages.
+PYZ_LISTING="$(mktemp -t icp-pyz.XXXXXX)"
+uv run pyi-archive_viewer -l -r -b "$EXE_PATH" >"$PYZ_LISTING" 2>/dev/null \
+  || fail "pyi-archive_viewer could not list $EXE_PATH"
 
 missing=()
 for pkg in "${REQUIRED_PACKAGES[@]}"; do
-  if ! find "$APP_PATH/Contents" \
+  if find "$APP_PATH/Contents" \
         \( -type d -iname "$pkg" -o -type f -iname "${pkg}.py" -o -type f -iname "${pkg}.so" \) \
         -print -quit | grep -q . ; then
-    missing+=("$pkg")
+    continue
   fi
+  if grep -qE "^[[:space:]]+${pkg}(\.|\$)" "$PYZ_LISTING"; then
+    continue
+  fi
+  missing+=("$pkg")
 done
+
+rm -f "$PYZ_LISTING"
 
 if (( ${#missing[@]} > 0 )); then
   fail "Missing bundled packages: ${missing[*]}"
@@ -116,29 +125,9 @@ fi
 log "All ${#REQUIRED_PACKAGES[@]} required packages found in bundle"
 
 # ---------------------------------------------------------------------------
-# 3. App launch smoke test
+# 3. Code signing
 # ---------------------------------------------------------------------------
-log "Step 3/8 — App launch smoke test"
-LAUNCH_LOG="$(mktemp -t icp-launch.XXXXXX)"
-"$APP_PATH/Contents/MacOS/$APP_NAME" >"$LAUNCH_LOG" 2>&1 &
-LAUNCH_PID=$!
-sleep 6
-if kill -0 "$LAUNCH_PID" 2>/dev/null; then
-  kill "$LAUNCH_PID" 2>/dev/null || true
-  wait "$LAUNCH_PID" 2>/dev/null || true
-fi
-if grep -qE 'ModuleNotFoundError|ImportError' "$LAUNCH_LOG"; then
-  cat "$LAUNCH_LOG" >&2
-  rm -f "$LAUNCH_LOG"
-  fail "Import error during launch test — see log above"
-fi
-rm -f "$LAUNCH_LOG"
-log "App launched cleanly (no import errors in 6s)"
-
-# ---------------------------------------------------------------------------
-# 4. Code signing
-# ---------------------------------------------------------------------------
-log "Step 4/8 — Code signing with '$SIGNING_IDENTITY'"
+log "Step 3/8 — Code signing with '$SIGNING_IDENTITY'"
 
 sign_one() {
   codesign --force --options runtime --timestamp \
@@ -169,6 +158,27 @@ sign_one "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH" \
   || fail "codesign verification failed"
 log "App bundle signed and verified"
+
+# ---------------------------------------------------------------------------
+# 4. App launch smoke test (after signing — unsigned bundles fail to load
+#    the embedded Python framework on macOS due to Team ID mismatches)
+# ---------------------------------------------------------------------------
+log "Step 4/8 — App launch smoke test"
+LAUNCH_LOG="$(mktemp -t icp-launch.XXXXXX)"
+"$APP_PATH/Contents/MacOS/$APP_NAME" >"$LAUNCH_LOG" 2>&1 &
+LAUNCH_PID=$!
+sleep 6
+if kill -0 "$LAUNCH_PID" 2>/dev/null; then
+  kill "$LAUNCH_PID" 2>/dev/null || true
+  wait "$LAUNCH_PID" 2>/dev/null || true
+fi
+if grep -qE 'ModuleNotFoundError|ImportError|Failed to load Python shared library|dyld|Library not loaded|Symbol not found' "$LAUNCH_LOG"; then
+  cat "$LAUNCH_LOG" >&2
+  rm -f "$LAUNCH_LOG"
+  fail "Launch smoke test failed — see log above"
+fi
+rm -f "$LAUNCH_LOG"
+log "App launched cleanly (no import / loader errors in 6s)"
 
 # ---------------------------------------------------------------------------
 # 5. Build + sign DMG
