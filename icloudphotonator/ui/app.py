@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import platform
 import subprocess
 import sys
 import webbrowser
@@ -25,10 +27,13 @@ else:
 
 from icloudphotonator.i18n import t, load_locale, get_locale
 from icloudphotonator.importer import find_photo_libraries
+from icloudphotonator.logging_config import setup_logging
 from icloudphotonator.persistence import APP_DIR
 from icloudphotonator.settings import ImportSettings
 
 from .bridge import BackendBridge
+
+LOG_FILE_PATH = Path.home() / ".icloudphotonator" / "logs" / "icloudphotonator.log"
 
 APP_TITLE = "iCloudPhotonator"
 REPOSITORY_URL = "https://github.com/hanselstner/icloudphotonator"
@@ -908,8 +913,26 @@ else:
             ctk.CTkLabel(
                 header, text=t("app.activity_log"), font=ctk.CTkFont(size=14, weight="bold"),
             ).pack(side="left")
+            ctk.CTkButton(
+                header, text=t("app.open_log"), font=ctk.CTkFont(size=11, underline=True),
+                fg_color="transparent", hover=False, text_color=ACCENT_BLUE,
+                width=20, command=self._open_log_file,
+            ).pack(side="right")
             self.log_view = LogView(self.main_frame, height=120, corner_radius=8)
             self.log_view.pack(fill="both", expand=True)
+
+        def _open_log_file(self) -> None:
+            """Reveal the log file in Finder, or its parent directory if missing."""
+            try:
+                LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                if LOG_FILE_PATH.exists():
+                    subprocess.run(["open", "-R", str(LOG_FILE_PATH)], check=False)
+                else:
+                    subprocess.run(["open", str(LOG_FILE_PATH.parent)], check=False)
+            except Exception as exc:
+                logging.getLogger("icloudphotonator").error(
+                    "Failed to open log file %s: %s", LOG_FILE_PATH, exc,
+                )
 
         def _build_footer(self) -> None:
             footer = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -1211,5 +1234,22 @@ else:
 
 
     def main() -> None:
+        logger = setup_logging()
+        logger.info("iCloudPhotonator starting (v%s)", APP_VERSION)
+        try:
+            mac_ver = platform.mac_ver()[0] or "unknown"
+        except Exception:
+            mac_ver = "unknown"
+        logger.info(
+            "macOS %s, Python %s",
+            mac_ver, sys.version.replace("\n", " "),
+        )
+        logger.info(
+            "PyInstaller MEIPASS: %s",
+            getattr(sys, "_MEIPASS", "development"),
+        )
+        logger.info("HOME: %s", Path.home())
+        logger.info("CWD: %s", os.getcwd())
+        logger.info("Log file: %s", LOG_FILE_PATH)
         app = ICloudPhotonatorApp()
         app.mainloop()

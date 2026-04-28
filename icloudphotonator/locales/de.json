@@ -13,6 +13,7 @@
   "app.retry": "Wiederholen",
   "app.restart_photos": "Photos neustarten & Fortfahren",
   "app.activity_log": "Aktivitätsprotokoll",
+  "app.open_log": "Log öffnen",
   "app.no_folder": "Kein Ordner ausgewählt",
   "app.album_placeholder": "Albumname (leer = kein Album)",
   "app.default_library": "Standard (Systemmediathek)",

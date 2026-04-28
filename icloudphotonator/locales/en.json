@@ -13,6 +13,7 @@
   "app.retry": "Retry",
   "app.restart_photos": "Restart Photos & Continue",
   "app.activity_log": "Activity Log",
+  "app.open_log": "Open Log",
   "app.no_folder": "No folder selected",
   "app.album_placeholder": "Album name (empty = no album)",
   "app.default_library": "Default (System Library)",

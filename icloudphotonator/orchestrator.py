@@ -607,6 +607,10 @@ class ImportOrchestrator:
                     self._notify_progress(self.get_job_stats(job.job_id))
                     continue
 
+                self.logger.info(
+                    "Starting batch import: %d files, album=%r, library=%s",
+                    len(staged_paths), self.album, self.library,
+                )
                 result = await asyncio.to_thread(
                     self.importer.import_batch,
                     staged_paths,
@@ -618,13 +622,31 @@ class ImportOrchestrator:
                     timeout=120,
                     library=self.library,
                 )
+                self.logger.info(
+                    "Batch import returned: success=%s, imported=%d, errors=%d, report_path=%s",
+                    getattr(result, "success", None),
+                    getattr(result, "imported_count", 0),
+                    getattr(result, "error_count", 0),
+                    getattr(result, "report_path", None),
+                )
+                if getattr(result, "errors", None):
+                    for err in result.errors[:3]:
+                        self.logger.error(
+                            "Batch error: file=%s msg=%s",
+                            err.get("file"), err.get("error"),
+                        )
 
                 # If the batch crashed (no report generated), retry each file individually
                 if not getattr(result, "success", True) and getattr(result, "report_path", None) is None:
+                    self.logger.warning(
+                        "Batch crashed without report, falling back to %d single-file imports",
+                        len(staged_paths),
+                    )
                     self._emit_log(t("log.batch_failed_retry", count=len(staged_paths)))
                     for staged_path in staged_paths:
                         if self._cancelled:
                             break
+                        self.logger.info("Single-file fallback import: %s", staged_path)
                         single_result = await asyncio.to_thread(
                             self.importer.import_batch,
                             [staged_path],
@@ -636,6 +658,18 @@ class ImportOrchestrator:
                             timeout=30,
                             library=self.library,
                         )
+                        self.logger.info(
+                            "Single-file fallback for %s returned: success=%s, errors=%d",
+                            staged_path,
+                            getattr(single_result, "success", None),
+                            getattr(single_result, "error_count", 0),
+                        )
+                        if getattr(single_result, "errors", None):
+                            for err in single_result.errors[:1]:
+                                self.logger.error(
+                                    "Single-file error: file=%s msg=%s",
+                                    err.get("file"), err.get("error"),
+                                )
                         # Find the original file info for this staged path
                         norm_key = unicodedata.normalize("NFD", str(staged_path.resolve()))
                         original_info = staged_lookup.get(norm_key)
