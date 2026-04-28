@@ -7,6 +7,7 @@ import platform
 import subprocess
 import sys
 import webbrowser
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -215,6 +216,38 @@ def _check_onboarding_done() -> bool:
     return isinstance(config, dict) and bool(config.get("onboarding_done", False))
 
 
+def _check_full_disk_skip_persisted() -> bool:
+    """Return True iff config has a non-empty ``onboarding_full_disk_skipped_at`` value."""
+    if not ONBOARDING_CONFIG_PATH.exists():
+        return False
+
+    try:
+        config = json.loads(ONBOARDING_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return False
+
+    if not isinstance(config, dict):
+        return False
+    value = config.get("onboarding_full_disk_skipped_at")
+    return bool(value)
+
+
+def _persist_full_disk_skip() -> None:
+    """Record an ISO 8601 UTC timestamp marking that the user skipped the FDA step."""
+    ONBOARDING_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    config: dict[str, object] = {}
+    if ONBOARDING_CONFIG_PATH.exists():
+        try:
+            payload = json.loads(ONBOARDING_CONFIG_PATH.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError):
+            payload = {}
+        if isinstance(payload, dict):
+            config = payload
+
+    config["onboarding_full_disk_skipped_at"] = datetime.now(timezone.utc).isoformat()
+    ONBOARDING_CONFIG_PATH.write_text(json.dumps(config), encoding="utf-8")
+
+
 def _mark_onboarding_done(force: bool = False) -> bool:
     """Persist completion of the first-launch permission onboarding.
 
@@ -237,6 +270,8 @@ def _mark_onboarding_done(force: bool = False) -> bool:
             config = payload
 
     config["onboarding_done"] = True
+    if force and _check_library_readable():
+        config.pop("onboarding_full_disk_skipped_at", None)
     ONBOARDING_CONFIG_PATH.write_text(json.dumps(config), encoding="utf-8")
     return True
 
@@ -613,6 +648,15 @@ else:
             )
             self._fda_label.pack(anchor="w")
 
+            if not self._library_readable and _check_full_disk_skip_persisted():
+                ctk.CTkLabel(
+                    self._content,
+                    text=t("onboarding.full_disk_previous_skip"),
+                    font=ctk.CTkFont(size=12, slant="italic"),
+                    text_color=TEXT_SECONDARY,
+                    wraplength=440, justify="center",
+                ).pack(pady=(0, 8))
+
             if not self._library_readable:
                 btn_row = ctk.CTkFrame(self._content, fg_color="transparent")
                 btn_row.pack(pady=(0, 8))
@@ -669,6 +713,7 @@ else:
 
         def _skip_full_disk(self) -> None:
             self._skipped_full_disk = True
+            _persist_full_disk_skip()
             self._show_step(3)
 
         def _go_back(self) -> None:

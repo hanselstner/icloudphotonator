@@ -166,6 +166,7 @@
   "onboarding.full_disk_not_granted": "Festplattenvollzugriff erforderlich",
   "onboarding.open_full_disk_settings": "Festplattenvollzugriff öffnen",
   "onboarding.skip_for_now": "Überspringen — später erledigen",
+  "onboarding.full_disk_previous_skip": "Du hast diesen Schritt zuletzt übersprungen — bitte erteile die Berechtigung jetzt.",
   "onboarding.ready_title": "Alles bereit!",
   "onboarding.ready_desc": "Wähle einen Quellordner und starte den Import deiner Fotos und Videos in Apple Fotos.",
   "onboarding.next": "Weiter",

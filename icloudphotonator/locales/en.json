@@ -137,6 +137,7 @@
   "onboarding.full_disk_not_granted": "Full Disk Access required",
   "onboarding.open_full_disk_settings": "Open Full Disk Access",
   "onboarding.skip_for_now": "Skip — I'll do it later",
+  "onboarding.full_disk_previous_skip": "You skipped this step previously — please grant the permission now.",
   "onboarding.ready_title": "You're All Set!",
   "onboarding.ready_desc": "Select a source folder and start importing your photos and videos into Apple Photos.",
   "onboarding.next": "Next",
