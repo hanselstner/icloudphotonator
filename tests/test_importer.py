@@ -137,6 +137,11 @@ def test_import_batch_maps_sqlite_open_error_in_photoslibrary_to_friendly_messag
     assert result.success is False
     assert result.error_count == 1
     assert result.errors == [
-        {"file": "", "error": t("error.full_disk_access_missing")}
+        {
+            "file": "",
+            "error": t("error.full_disk_access_missing"),
+            "full_disk_access_missing": True,
+        }
     ]
     assert "Full Disk Access" in result.errors[0]["error"]
+    assert result.errors[0]["full_disk_access_missing"] is True

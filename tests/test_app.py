@@ -69,6 +69,8 @@ def test_check_automation_permission_returns_false_on_failure(monkeypatch) -> No
 def test_onboarding_done_round_trip_uses_config_file(tmp_path, monkeypatch) -> None:
     config_path = tmp_path / "config.json"
     monkeypatch.setattr(app, "ONBOARDING_CONFIG_PATH", config_path)
+    monkeypatch.setattr(app, "_check_automation_permission", lambda: True)
+    monkeypatch.setattr(app, "_check_library_readable", lambda: True)
 
     assert app._check_onboarding_done() is False
 
@@ -76,6 +78,80 @@ def test_onboarding_done_round_trip_uses_config_file(tmp_path, monkeypatch) -> N
 
     assert app._check_onboarding_done() is True
     assert json.loads(config_path.read_text(encoding="utf-8")) == {"onboarding_done": True}
+
+
+def test_mark_onboarding_done_does_not_persist_when_full_disk_access_missing(
+    tmp_path, monkeypatch
+) -> None:
+    config_path = tmp_path / "config.json"
+    monkeypatch.setattr(app, "ONBOARDING_CONFIG_PATH", config_path)
+    monkeypatch.setattr(app, "_check_automation_permission", lambda: True)
+    monkeypatch.setattr(app, "_check_library_readable", lambda: False)
+
+    persisted = app._mark_onboarding_done()
+
+    assert persisted is False
+    assert app._check_onboarding_done() is False
+    assert not config_path.exists()
+
+
+def test_mark_onboarding_done_force_persists_even_without_full_disk_access(
+    tmp_path, monkeypatch
+) -> None:
+    config_path = tmp_path / "config.json"
+    monkeypatch.setattr(app, "ONBOARDING_CONFIG_PATH", config_path)
+    monkeypatch.setattr(app, "_check_automation_permission", lambda: False)
+    monkeypatch.setattr(app, "_check_library_readable", lambda: False)
+
+    persisted = app._mark_onboarding_done(force=True)
+
+    assert persisted is True
+    assert app._check_onboarding_done() is True
+
+
+def test_full_disk_access_settings_url_points_to_correct_pane() -> None:
+    assert (
+        app.FULL_DISK_ACCESS_SETTINGS_URL
+        == "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+    )
+
+
+def test_open_full_disk_access_settings_uses_deeplink(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(command, check=False):
+        captured["command"] = command
+        captured["check"] = check
+
+    monkeypatch.setattr(app.subprocess, "run", fake_run)
+
+    app._open_full_disk_access_settings()
+
+    assert captured["command"] == [
+        "open",
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+    ]
+    assert captured["check"] is False
+
+
+def test_locale_files_contain_full_disk_access_keys() -> None:
+    locales_dir = app.Path(__file__).resolve().parent.parent / "icloudphotonator" / "locales"
+    required_keys = [
+        "onboarding.full_disk_title",
+        "onboarding.full_disk_desc",
+        "onboarding.full_disk_granted",
+        "onboarding.full_disk_not_granted",
+        "onboarding.open_full_disk_settings",
+        "onboarding.skip_for_now",
+        "dialog.full_disk_title",
+        "dialog.full_disk_message",
+        "dialog.restart_app",
+    ]
+    for locale in ("en", "de"):
+        data = json.loads((locales_dir / f"{locale}.json").read_text(encoding="utf-8"))
+        for key in required_keys:
+            assert key in data, f"Missing key {key!r} in {locale}.json"
+            assert data[key], f"Empty value for {key!r} in {locale}.json"
 
 
 def test_show_onboarding_first_run_opens_dialog(monkeypatch) -> None:

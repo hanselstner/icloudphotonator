@@ -89,6 +89,7 @@ WARNING = "#FF9500"
 ERROR = "#FF3B30"
 
 AUTOMATION_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+FULL_DISK_ACCESS_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
 ONBOARDING_CONFIG_PATH = APP_DIR / "config.json"
 PERMISSION_DIALOG_TITLE = "dialog.permission_title"  # i18n key
 PERMISSION_DIALOG_TEXT = "dialog.permission_message"  # i18n key
@@ -150,6 +151,34 @@ def _open_automation_settings() -> None:
     subprocess.run(["open", AUTOMATION_SETTINGS_URL], check=False)
 
 
+def _open_full_disk_access_settings() -> None:
+    subprocess.run(["open", FULL_DISK_ACCESS_SETTINGS_URL], check=False)
+
+
+def _check_library_readable() -> bool:
+    """Return True if the Apple Photos library database is readable (FDA granted)."""
+    try:
+        from icloudphotonator.photos_preflight import check_library_readable
+
+        return bool(check_library_readable(None))
+    except Exception:
+        return False
+
+
+def _restart_app() -> None:
+    """Relaunch the current process and exit. TCC changes require a relaunch."""
+    try:
+        executable = sys.executable
+        argv = sys.argv
+        if getattr(sys, "frozen", False):
+            subprocess.Popen([executable, *argv[1:]])
+        else:
+            subprocess.Popen([executable, *argv])
+    except Exception:
+        pass
+    sys.exit(0)
+
+
 def _prompt_for_automation_permission() -> bool:
     if messagebox is None:
         return False
@@ -186,8 +215,17 @@ def _check_onboarding_done() -> bool:
     return isinstance(config, dict) and bool(config.get("onboarding_done", False))
 
 
-def _mark_onboarding_done() -> None:
-    """Persist completion of the first-launch permission onboarding."""
+def _mark_onboarding_done(force: bool = False) -> bool:
+    """Persist completion of the first-launch permission onboarding.
+
+    Without *force*, requires both Automation permission and Full Disk Access
+    to be granted; otherwise leaves the config untouched and returns False.
+    Returns True when the flag was persisted.
+    """
+    if not force:
+        if not _check_automation_permission() or not _check_library_readable():
+            return False
+
     ONBOARDING_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     config: dict[str, object] = {}
     if ONBOARDING_CONFIG_PATH.exists():
@@ -200,6 +238,7 @@ def _mark_onboarding_done() -> None:
 
     config["onboarding_done"] = True
     ONBOARDING_CONFIG_PATH.write_text(json.dumps(config), encoding="utf-8")
+    return True
 
 
 if ctk is None or tk is None or filedialog is None or messagebox is None:
@@ -219,6 +258,13 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
 
 
     class OnboardingDialog:
+        """Placeholder when Tk support is unavailable."""
+
+        def __init__(self, *args, **kwargs) -> None:
+            _raise_missing_ui_support()
+
+
+    class FullDiskAccessDialog:
         """Placeholder when Tk support is unavailable."""
 
         def __init__(self, *args, **kwargs) -> None:
@@ -410,7 +456,7 @@ else:
     class OnboardingDialog(ctk.CTkToplevel):
         """Step-by-step onboarding wizard shown on first launch."""
 
-        _TOTAL_STEPS = 3
+        _TOTAL_STEPS = 4
 
         def __init__(self, master, on_complete: "Callable[[], None] | None" = None):
             super().__init__(master)
@@ -421,9 +467,11 @@ else:
             self._on_complete = on_complete
             self._step = 0
             self._permission_granted = _check_automation_permission()
+            self._library_readable = _check_library_readable()
+            self._skipped_full_disk = False
             self._build_ui()
             self._show_step(0)
-            _center_window(self, 520, 480, parent=master)
+            _center_window(self, 520, 520, parent=master)
             self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         def _build_ui(self) -> None:
@@ -480,6 +528,8 @@ else:
             elif step == 1:
                 self._build_permissions()
             elif step == 2:
+                self._build_full_disk()
+            elif step == 3:
                 self._build_ready()
 
         def _build_welcome(self) -> None:
@@ -538,6 +588,57 @@ else:
                     command=self._recheck_permission,
                 ).pack(side="left")
 
+        def _build_full_disk(self) -> None:
+            ctk.CTkLabel(
+                self._content, text=t("onboarding.full_disk_title"),
+                font=ctk.CTkFont(size=20, weight="bold"),
+            ).pack(pady=(24, 8))
+            ctk.CTkLabel(
+                self._content, text=t("onboarding.full_disk_desc"),
+                font=ctk.CTkFont(size=13), text_color=TEXT_SECONDARY,
+                wraplength=440, justify="center",
+            ).pack(pady=(0, 20))
+
+            status_frame = ctk.CTkFrame(self._content, corner_radius=10,
+                                        border_width=1, border_color=BORDER, fg_color=BG_CARD)
+            status_frame.pack(fill="x", pady=(0, 16))
+            inner = ctk.CTkFrame(status_frame, fg_color="transparent")
+            inner.pack(fill="x", padx=16, pady=12)
+
+            self._fda_label = ctk.CTkLabel(
+                inner,
+                text=t("onboarding.full_disk_granted") if self._library_readable else t("onboarding.full_disk_not_granted"),
+                font=ctk.CTkFont(size=13),
+                text_color=SUCCESS if self._library_readable else WARNING,
+            )
+            self._fda_label.pack(anchor="w")
+
+            if not self._library_readable:
+                btn_row = ctk.CTkFrame(self._content, fg_color="transparent")
+                btn_row.pack(pady=(0, 8))
+                ctk.CTkButton(
+                    btn_row, text=t("onboarding.open_full_disk_settings"), width=200, height=32,
+                    corner_radius=8, fg_color=ACCENT_BLUE, hover_color="#005EC4",
+                    command=self._open_full_disk_settings,
+                ).pack(side="left", padx=(0, 8))
+                ctk.CTkButton(
+                    btn_row, text=t("onboarding.check_again"), width=140, height=32,
+                    corner_radius=8, fg_color="transparent", border_width=1,
+                    border_color=ACCENT_BLUE, text_color=ACCENT_BLUE,
+                    hover_color=("#e8f0fe", "#1a3a5c"),
+                    command=self._recheck_library,
+                ).pack(side="left")
+
+                skip_row = ctk.CTkFrame(self._content, fg_color="transparent")
+                skip_row.pack(pady=(4, 0))
+                ctk.CTkButton(
+                    skip_row, text=t("onboarding.skip_for_now"), width=240, height=28,
+                    corner_radius=8, fg_color="transparent", border_width=1,
+                    border_color=BORDER, text_color=TEXT_SECONDARY,
+                    hover_color=("#e8e8ed", "#3a3a3c"),
+                    command=self._skip_full_disk,
+                ).pack()
+
         def _build_ready(self) -> None:
             ctk.CTkLabel(
                 self._content, text="🎉", font=ctk.CTkFont(size=48),
@@ -555,22 +656,42 @@ else:
         def _open_settings(self) -> None:
             _open_automation_settings()
 
+        def _open_full_disk_settings(self) -> None:
+            _open_full_disk_access_settings()
+
         def _recheck_permission(self) -> None:
             self._permission_granted = _check_automation_permission()
             self._show_step(1)
+
+        def _recheck_library(self) -> None:
+            self._library_readable = _check_library_readable()
+            self._show_step(2)
+
+        def _skip_full_disk(self) -> None:
+            self._skipped_full_disk = True
+            self._show_step(3)
 
         def _go_back(self) -> None:
             if self._step > 0:
                 self._show_step(self._step - 1)
 
         def _go_next(self) -> None:
+            # Gate: cannot advance past Full Disk Access step (2) without
+            # readable library OR explicit skip.
+            if self._step == 2 and not self._library_readable and not self._skipped_full_disk:
+                return
             if self._step < self._TOTAL_STEPS - 1:
                 self._show_step(self._step + 1)
             else:
                 self._finish()
 
         def _finish(self) -> None:
-            _mark_onboarding_done()
+            # Persist onboarding only if the gate is satisfied (both checks
+            # pass) or the user explicitly skipped Full Disk Access.
+            if self._skipped_full_disk:
+                _mark_onboarding_done(force=True)
+            else:
+                _mark_onboarding_done()
             if self._on_complete:
                 self._on_complete()
             self.destroy()
@@ -627,6 +748,74 @@ else:
             self.configure(state="disabled")
 
 
+    class FullDiskAccessDialog(ctk.CTkToplevel):
+        """Modal dialog shown when an import is blocked by missing Full Disk Access."""
+
+        def __init__(self, master):
+            super().__init__(master)
+            self.title(t("dialog.full_disk_title"))
+            self.resizable(False, False)
+            self.grab_set()
+            self.configure(fg_color=BG_PRIMARY)
+            self._build_ui()
+            _center_window(self, 480, 280, parent=master)
+
+        def _build_ui(self) -> None:
+            ctk.CTkLabel(
+                self, text=t("dialog.full_disk_title"),
+                font=ctk.CTkFont(size=18, weight="bold"),
+                wraplength=420, justify="center",
+            ).pack(padx=24, pady=(20, 8))
+            ctk.CTkLabel(
+                self, text=t("dialog.full_disk_message"),
+                font=ctk.CTkFont(size=12), text_color=TEXT_SECONDARY,
+                wraplength=420, justify="center",
+            ).pack(padx=24, pady=(0, 16))
+
+            self._status_label = ctk.CTkLabel(
+                self, text="", font=ctk.CTkFont(size=12),
+            )
+            self._status_label.pack(padx=24, pady=(0, 8))
+
+            btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+            btn_frame.pack(padx=24, pady=(0, 20))
+            ctk.CTkButton(
+                btn_frame, text=t("onboarding.open_full_disk_settings"),
+                width=180, height=32, corner_radius=8,
+                fg_color=ACCENT_BLUE, hover_color="#005EC4",
+                command=self._open_settings,
+            ).pack(side="left", padx=4)
+            ctk.CTkButton(
+                btn_frame, text=t("onboarding.check_again"),
+                width=120, height=32, corner_radius=8,
+                fg_color="transparent", border_width=1,
+                border_color=ACCENT_BLUE, text_color=ACCENT_BLUE,
+                hover_color=("#e8f0fe", "#1a3a5c"),
+                command=self._check_again,
+            ).pack(side="left", padx=4)
+            ctk.CTkButton(
+                btn_frame, text=t("dialog.restart_app"),
+                width=120, height=32, corner_radius=8,
+                fg_color=WARNING, hover_color="#E68600", text_color="#ffffff",
+                command=self._restart,
+            ).pack(side="left", padx=4)
+
+        def _open_settings(self) -> None:
+            _open_full_disk_access_settings()
+
+        def _check_again(self) -> None:
+            if _check_library_readable():
+                self.destroy()
+            else:
+                self._status_label.configure(
+                    text=t("onboarding.full_disk_not_granted"),
+                    text_color=WARNING,
+                )
+
+        def _restart(self) -> None:
+            _restart_app()
+
+
     class ICloudPhotonatorApp(ctk.CTk):
         """Main desktop application window."""
 
@@ -658,6 +847,7 @@ else:
                 on_complete=self._handle_complete,
                 on_error=self._handle_error,
                 on_permission_error=self._handle_permission_error,
+                on_full_disk_access_error=self._handle_full_disk_access_error,
             )
 
             self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1130,6 +1320,18 @@ else:
                 )
                 if _prompt_for_automation_permission():
                     _open_automation_settings()
+
+            self.after(0, _show_dialog)
+
+        def _handle_full_disk_access_error(self) -> None:
+            def _show_dialog() -> None:
+                if self._is_running:
+                    self._bridge.stop()
+                self._finish_run(
+                    t("progress.error"),
+                    t("error.full_disk_access_missing"),
+                )
+                FullDiskAccessDialog(self)
 
             self.after(0, _show_dialog)
 

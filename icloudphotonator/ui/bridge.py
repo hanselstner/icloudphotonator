@@ -38,13 +38,15 @@ class BackendBridge:
         self._on_complete: Callable[[], None] | None = None
         self._on_error: Callable[[str], None] | None = None
         self._on_permission_error: Callable[[], None] | None = None
+        self._on_full_disk_access_error: Callable[[], None] | None = None
 
-    def set_callbacks(self, on_progress=None, on_log=None, on_complete=None, on_error=None, on_permission_error=None):
+    def set_callbacks(self, on_progress=None, on_log=None, on_complete=None, on_error=None, on_permission_error=None, on_full_disk_access_error=None):
         self._on_progress = on_progress
         self._on_log = on_log
         self._on_complete = on_complete
         self._on_error = on_error
         self._on_permission_error = on_permission_error
+        self._on_full_disk_access_error = on_full_disk_access_error
 
     def start_import(self, source_path: Path, library: Path | None = None, album: str | None = None) -> None:
         """Start an import in a dedicated background thread."""
@@ -209,6 +211,7 @@ class BackendBridge:
             self._register_callback(orchestrator, "on_progress", self._on_progress)
             self._register_callback(orchestrator, "on_log", self._on_log)
             self._register_callback(orchestrator, "on_permission_error", self._emit_permission_error)
+            self._register_callback(orchestrator, "on_full_disk_access_error", self._emit_full_disk_access_error)
 
             start_import = getattr(orchestrator, "start_import", None)
             if not callable(start_import):
@@ -250,3 +253,7 @@ class BackendBridge:
     def _emit_permission_error(self) -> None:
         if self._on_permission_error:
             self._on_permission_error()
+
+    def _emit_full_disk_access_error(self) -> None:
+        if self._on_full_disk_access_error:
+            self._on_full_disk_access_error()

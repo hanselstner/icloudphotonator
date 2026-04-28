@@ -130,6 +130,7 @@ class PhotoImporter:
                 fallback_success=False,
                 fallback_error=error_msg,
                 file_count=len(file_paths),
+                full_disk_access_missing=fda_match,
             )
 
         return self._result_from_report(report_path=report_path, fallback_success=True)
@@ -272,6 +273,7 @@ class PhotoImporter:
         fallback_success: bool,
         fallback_error: str | None = None,
         file_count: int = 0,
+        full_disk_access_missing: bool = False,
     ) -> ImportResult:
         parsed = self._parse_report(report_path) if report_path.exists() else ImportResult(
             success=fallback_success,
@@ -288,7 +290,10 @@ class PhotoImporter:
             if parsed.error_count == 0:
                 parsed.error_count = file_count
             if fallback_error and not parsed.errors:
-                parsed.errors.append({"file": "", "error": fallback_error})
+                entry: dict = {"file": "", "error": fallback_error}
+                if full_disk_access_missing:
+                    entry["full_disk_access_missing"] = True
+                parsed.errors.append(entry)
 
         if parsed.report_path is None and report_path.exists():
             parsed.report_path = report_path

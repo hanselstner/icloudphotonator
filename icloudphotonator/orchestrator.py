@@ -77,6 +77,7 @@ class ImportOrchestrator:
         self._progress_callbacks: list[Callable] = []
         self._log_callbacks: list[Callable[[str], None]] = []
         self._permission_error_callbacks: list[Callable[[], None]] = []
+        self._full_disk_access_error_callbacks: list[Callable[[], None]] = []
         self._active_job: Job | None = None
         self._network_monitor: NetworkMonitor | None = None
         self._network_pause_requested = False
@@ -315,6 +316,10 @@ class ImportOrchestrator:
         """Register a callback for fatal macOS Automation permission errors."""
         self._permission_error_callbacks.append(callback)
 
+    def on_full_disk_access_error(self, callback: Callable[[], None]) -> None:
+        """Register a callback fired when an import is blocked by missing Full Disk Access."""
+        self._full_disk_access_error_callbacks.append(callback)
+
     def _notify_progress(self, stats: dict):
         for callback in list(self._progress_callbacks):
             try:
@@ -336,6 +341,13 @@ class ImportOrchestrator:
                 callback()
             except Exception:
                 self.logger.exception("Permission error callback failed")
+
+    def _emit_full_disk_access_error(self) -> None:
+        for callback in list(self._full_disk_access_error_callbacks):
+            try:
+                callback()
+            except Exception:
+                self.logger.exception("Full Disk Access error callback failed")
 
     def _on_network_lost(self) -> None:
         if self._cancelled or self._active_job is None or self._network_pause_requested:
@@ -486,6 +498,7 @@ class ImportOrchestrator:
                 # Full Disk Access is missing — abort cleanly without falling
                 # back to single-file retry loops. Surface one actionable error.
                 self._emit_log(t("error.full_disk_access_missing"))
+                self._emit_full_disk_access_error()
                 self.cancel()
                 return
             for error in preflight_result.errors:
