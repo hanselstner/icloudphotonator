@@ -1,5 +1,6 @@
 import json
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import icloudphotonator.ui.app as app
 from icloudphotonator.i18n import load_locale
@@ -143,6 +144,7 @@ def test_locale_files_contain_full_disk_access_keys() -> None:
         "onboarding.full_disk_not_granted",
         "onboarding.open_full_disk_settings",
         "onboarding.skip_for_now",
+        "onboarding.full_disk_previous_skip",
         "dialog.full_disk_title",
         "dialog.full_disk_message",
         "dialog.restart_app",
@@ -152,6 +154,60 @@ def test_locale_files_contain_full_disk_access_keys() -> None:
         for key in required_keys:
             assert key in data, f"Missing key {key!r} in {locale}.json"
             assert data[key], f"Empty value for {key!r} in {locale}.json"
+
+
+def test_full_disk_skip_persists_to_config(tmp_path, monkeypatch) -> None:
+    from datetime import datetime
+
+    config_path = tmp_path / "config.json"
+    monkeypatch.setattr(app, "ONBOARDING_CONFIG_PATH", config_path)
+
+    app._persist_full_disk_skip()
+
+    assert config_path.exists()
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert "onboarding_full_disk_skipped_at" in data
+    # Must be a parseable ISO 8601 timestamp.
+    datetime.fromisoformat(data["onboarding_full_disk_skipped_at"])
+    assert app._check_full_disk_skip_persisted() is True
+
+
+def test_full_disk_skip_cleared_when_fda_granted(tmp_path, monkeypatch) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"onboarding_full_disk_skipped_at": "2026-04-28T12:00:00+00:00"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app, "ONBOARDING_CONFIG_PATH", config_path)
+    monkeypatch.setattr(app, "_check_automation_permission", lambda: True)
+    monkeypatch.setattr(app, "_check_library_readable", lambda: True)
+
+    persisted = app._mark_onboarding_done(force=True)
+
+    assert persisted is True
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert data.get("onboarding_done") is True
+    assert "onboarding_full_disk_skipped_at" not in data
+    assert app._check_full_disk_skip_persisted() is False
+
+
+def test_full_disk_skip_persists_when_fda_still_missing(tmp_path, monkeypatch) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"onboarding_full_disk_skipped_at": "2026-04-28T12:00:00+00:00"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app, "ONBOARDING_CONFIG_PATH", config_path)
+    monkeypatch.setattr(app, "_check_automation_permission", lambda: True)
+    monkeypatch.setattr(app, "_check_library_readable", lambda: False)
+
+    persisted = app._mark_onboarding_done(force=True)
+
+    assert persisted is True
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert data.get("onboarding_done") is True
+    assert data.get("onboarding_full_disk_skipped_at") == "2026-04-28T12:00:00+00:00"
+    assert app._check_full_disk_skip_persisted() is True
 
 
 def test_show_onboarding_first_run_opens_dialog(monkeypatch) -> None:
@@ -212,3 +268,56 @@ def test_run_startup_sequence_runs_onboarding_before_resume_check() -> None:
     app.ICloudPhotonatorApp._run_startup_sequence(DummyApp())
 
     assert calls == ["onboarding", "source_access", "resume"]
+
+
+def test_handle_full_disk_access_error_constructs_dialog(monkeypatch) -> None:
+    """The FDA error handler stops the bridge, finishes the run, and shows the dialog."""
+    load_locale("de")
+
+    dialog_recorder = MagicMock()
+    monkeypatch.setattr(app, "FullDiskAccessDialog", dialog_recorder)
+
+    class DummyApp:
+        def __init__(self) -> None:
+            self._is_running = True
+            self._bridge = MagicMock()
+            self._finish_run = MagicMock()
+
+        def after(self, delay, callback):
+            callback()
+
+    dummy = DummyApp()
+
+    app.ICloudPhotonatorApp._handle_full_disk_access_error(dummy)
+
+    dialog_recorder.assert_called_once_with(dummy)
+    dummy._bridge.stop.assert_called_once_with()
+    dummy._finish_run.assert_called_once()
+    finish_args = dummy._finish_run.call_args.args
+    assert finish_args[0] == app.t("progress.error")
+    assert finish_args[1] == app.t("error.full_disk_access_missing")
+
+
+def test_handle_full_disk_access_error_skips_bridge_stop_when_idle(monkeypatch) -> None:
+    """When no import is running, _bridge.stop() is not invoked but the dialog still appears."""
+    load_locale("de")
+
+    dialog_recorder = MagicMock()
+    monkeypatch.setattr(app, "FullDiskAccessDialog", dialog_recorder)
+
+    class DummyApp:
+        def __init__(self) -> None:
+            self._is_running = False
+            self._bridge = MagicMock()
+            self._finish_run = MagicMock()
+
+        def after(self, delay, callback):
+            callback()
+
+    dummy = DummyApp()
+
+    app.ICloudPhotonatorApp._handle_full_disk_access_error(dummy)
+
+    dialog_recorder.assert_called_once_with(dummy)
+    dummy._bridge.stop.assert_not_called()
+    dummy._finish_run.assert_called_once()
