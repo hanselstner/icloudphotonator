@@ -478,10 +478,16 @@ class ImportOrchestrator:
     async def _import_phase(self, job: Job, scan_done_event: asyncio.Event | None = None):
         """Run the import loop."""
         # Run full preflight before starting import
-        preflight_result = await asyncio.to_thread(self.preflight.run_preflight)
+        preflight_result = await asyncio.to_thread(self.preflight.run_preflight, self.library)
         if preflight_result.passed:
             self._emit_log(t("log.preflight_passed"))
         else:
+            if not preflight_result.checks.get("library_readable", True):
+                # Full Disk Access is missing — abort cleanly without falling
+                # back to single-file retry loops. Surface one actionable error.
+                self._emit_log(t("error.full_disk_access_missing"))
+                self.cancel()
+                return
             for error in preflight_result.errors:
                 self._emit_log(t("log.preflight_warning", error=error))
             self._emit_log(t("log.preflight_failed"))

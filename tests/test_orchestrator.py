@@ -36,7 +36,11 @@ def mock_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         PhotosPreflight,
         "run_preflight",
-        lambda self: PreflightResult(passed=True, checks={"photos_responsive": True}, errors=[]),
+        lambda self, library=None: PreflightResult(
+            passed=True,
+            checks={"photos_responsive": True, "library_readable": True},
+            errors=[],
+        ),
     )
     monkeypatch.setattr(PhotosPreflight, "ensure_photos_responsive", lambda self: True)
 
@@ -1011,3 +1015,69 @@ async def test_start_import_emits_completion_summary_with_counts(
     await orchestrator.start_import(source_path)
 
     assert "Import abgeschlossen: 1 importiert, 1 übersprungen, 1 Fehler" in emitted_logs
+
+
+@pytest.mark.asyncio
+async def test_import_phase_aborts_cleanly_when_library_readable_check_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When preflight reports library_readable=False, the import phase must
+    abort immediately and never enter any single-file fallback retry loop.
+    """
+    from icloudphotonator.photos_preflight import PhotosPreflight, PreflightResult
+
+    source_path = tmp_path / "photos"
+    source_path.mkdir()
+    file_path = source_path / "a.jpg"
+    file_path.write_bytes(b"image-bytes")
+    library = tmp_path / "Family.photoslibrary"
+    library.mkdir()
+
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db", library=library)
+    job = Job(orchestrator.db)
+    job.start(source_path)
+    orchestrator._active_job = job
+    orchestrator.db.add_file(job.job_id, file_path, 1, "hash-a", "image")
+    orchestrator.db.update_job_state(job.job_id, JobState.DEDUPLICATING)
+
+    captured_library: dict[str, object] = {}
+
+    def fake_run_preflight(self, library=None):
+        captured_library["library"] = library
+        return PreflightResult(
+            passed=False,
+            checks={
+                "photos_running": True,
+                "automation_permission": True,
+                "photos_responsive": True,
+                "has_window": True,
+                "library_readable": False,
+            },
+            errors=["Full Disk Access is missing: …"],
+        )
+
+    monkeypatch.setattr(PhotosPreflight, "run_preflight", fake_run_preflight)
+
+    import_batch_calls: list[object] = []
+
+    def fail_import_batch(*args, **kwargs):
+        import_batch_calls.append(args)
+        raise AssertionError("import_batch must not be called when FDA is missing")
+
+    async def fail_stage_files(unique_files):
+        raise AssertionError("stage_files must not be called when FDA is missing")
+
+    monkeypatch.setattr(orchestrator.importer, "import_batch", fail_import_batch)
+    monkeypatch.setattr(orchestrator.staging, "stage_files", fail_stage_files)
+
+    emitted_logs: list[str] = []
+    orchestrator.on_log(emitted_logs.append)
+
+    await orchestrator._import_phase(job)
+
+    assert captured_library["library"] == library
+    assert orchestrator._cancelled is True
+    assert import_batch_calls == []
+    fda_logs = [m for m in emitted_logs if "Full Disk Access" in m or "Festplattenvollzugriff" in m]
+    assert len(fda_logs) == 1

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -9,6 +10,46 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger("icloudphotonator.preflight")
+
+
+def check_library_readable(library: Path | None) -> bool:
+    """Verify the Apple Photos library SQLite database can be opened.
+
+    Without Full Disk Access (TCC) macOS blocks sqlite3.connect() on the
+    Photos.sqlite file with 'unable to open database file' — we use that as
+    the canonical signal that FDA is missing. Resolves *library* via
+    osxphotos.utils.get_last_library_path() when None.
+    """
+    if library is None:
+        try:
+            from osxphotos.utils import get_last_library_path
+            resolved = get_last_library_path()
+        except Exception as exc:
+            logger.warning("check_library_readable: failed to resolve library path: %s", exc)
+            return False
+        if not resolved:
+            logger.warning("check_library_readable: no last library path available")
+            return False
+        library = Path(resolved)
+
+    db_path = Path(library)
+    if db_path.suffix == ".photoslibrary" or db_path.name.endswith(".photoslibrary"):
+        db_path = db_path / "database" / "Photos.sqlite"
+
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA schema_version")
+        return True
+    except sqlite3.OperationalError as exc:
+        logger.warning("check_library_readable failed for %s: %s", db_path, exc)
+        return False
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 # Minimal valid JPEG for health-image import test
 HEALTH_JPEG = bytes.fromhex(
@@ -122,7 +163,7 @@ class PhotosPreflight:
             logger.warning("Health image check failed: %s", exc)
             return False
 
-    def run_preflight(self) -> PreflightResult:
+    def run_preflight(self, library: Path | None = None) -> PreflightResult:
         """Run all preflight checks. Returns a PreflightResult."""
         checks: dict[str, bool] = {}
         errors: list[str] = []
@@ -142,6 +183,14 @@ class PhotosPreflight:
         checks["has_window"] = self._check_has_window()
         if not checks["has_window"]:
             errors.append("Photos.app has no window (headless/blocked?).")
+
+        checks["library_readable"] = check_library_readable(library)
+        if not checks["library_readable"]:
+            errors.append(
+                "Full Disk Access is missing: cannot read Apple Photos library database. "
+                "Enable access in System Settings → Privacy & Security → Full Disk Access, "
+                "then relaunch the app."
+            )
 
         passed = all(checks.values())
         result = PreflightResult(passed=passed, checks=checks, errors=errors)

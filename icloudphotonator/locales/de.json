@@ -130,6 +130,7 @@
   "error.photos_not_responding": "Photos.app reagiert nicht",
   "error.import_failed": "Import gescheitert: {name}",
   "error.stuck_interrupted": "Import wurde durch App-Neustart unterbrochen",
+  "error.full_disk_access_missing": "Full Disk Access fehlt: iCloudPhotonator darf die Apple Photos-Mediathek nicht lesen. Aktiviere den Zugriff in Systemeinstellungen → Datenschutz & Sicherheit → Festplattenvollzugriff und starte die App neu.",
   "settings.title": "Einstellungen",
   "settings.intro": "Dies sind empfohlene Standardwerte, die für die meisten Systeme gut funktionieren. Wenn Photos.app instabil wird, reduziere die Batch-Größen und erhöhe die Cooldowns. Wenn dein System Imports gut verarbeitet, kannst du die Geschwindigkeit vorsichtig erhöhen.",
   "settings.performance": "Import-Performance",

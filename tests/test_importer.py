@@ -1,7 +1,10 @@
+import sqlite3
+
 import click
 
 from pathlib import Path
 
+from icloudphotonator.i18n import t
 from icloudphotonator.importer import PhotoImporter, find_photo_libraries
 
 
@@ -112,3 +115,28 @@ def test_import_batch_returns_descriptive_error_for_empty_abort_exception(
             "error": "osxphotos aborted — exiftool may be missing (https://exiftool.org/)",
         }
     ]
+
+
+def test_import_batch_maps_sqlite_open_error_in_photoslibrary_to_friendly_message(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    file_paths = [tmp_path / "a.jpg"]
+    library = tmp_path / "Personal.photoslibrary"
+    library.mkdir()
+
+    def fake_import_cli(**kwargs) -> None:
+        raise sqlite3.OperationalError("unable to open database file")
+
+    monkeypatch.setattr(PhotoImporter, "_verify_osxphotos", lambda self: None)
+    monkeypatch.setattr(PhotoImporter, "_get_import_cli", lambda self: fake_import_cli)
+
+    importer = PhotoImporter()
+    result = importer.import_batch(file_paths, report_dir=tmp_path, library=library)
+
+    assert result.success is False
+    assert result.error_count == 1
+    assert result.errors == [
+        {"file": "", "error": t("error.full_disk_access_missing")}
+    ]
+    assert "Full Disk Access" in result.errors[0]["error"]

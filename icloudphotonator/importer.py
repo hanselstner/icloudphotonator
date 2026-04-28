@@ -4,12 +4,15 @@ import csv
 import json
 import logging
 import os
+import sqlite3
 import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
+
+from .i18n import t
 
 
 logger = logging.getLogger("icloudphotonator")
@@ -101,6 +104,26 @@ class PhotoImporter:
                 error_msg = f"{type(exc).__module__}.{type(exc).__name__}"
             if "Abort" in type(exc).__name__ and not parts:
                 error_msg = "osxphotos aborted — exiftool may be missing (https://exiftool.org/)"
+
+            # Detect missing Full Disk Access: sqlite3 cannot open the
+            # Photos library database. Walk the chain to find the signature.
+            fda_match = False
+            current = exc
+            seen_fda: set[int] = set()
+            while current is not None and id(current) not in seen_fda:
+                seen_fda.add(id(current))
+                if (
+                    isinstance(current, sqlite3.OperationalError)
+                    and "unable to open database file" in str(current).lower()
+                ):
+                    combined = " ".join(parts).lower()
+                    library_str = str(library).lower() if library is not None else ""
+                    if ".photoslibrary" in combined or ".photoslibrary" in library_str:
+                        fda_match = True
+                        break
+                current = getattr(current, '__cause__', None) or getattr(current, '__context__', None)
+            if fda_match:
+                error_msg = t("error.full_disk_access_missing")
             logger.error("Resolved error message for report: %s", error_msg)
             return self._result_from_report(
                 report_path=report_path,
