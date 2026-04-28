@@ -6,7 +6,7 @@ import customtkinter
 from PyInstaller.utils.hooks import collect_all
 
 APP_NAME = "iCloudPhotonator"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 BUNDLE_IDENTIFIER = "com.hanselstner.icloudphotonator"
 PROJECT_ROOT = Path(SPECPATH)
 ENTRYPOINT = PROJECT_ROOT / "icloudphotonator" / "__main__.py"

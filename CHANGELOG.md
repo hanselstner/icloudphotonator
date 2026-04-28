@@ -4,6 +4,20 @@ All notable changes to iCloudPhotonator will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-04-28
+
+### Added
+
+- Full Disk Access onboarding step: new 4-step wizard (Welcome → Automation → Full Disk Access → Ready) with deeplink to System Settings, live status check, and gated Next button
+- Full Disk Access error dialog: actionable dialog (Open / Check Again / Restart App) shown when an import fails because Photos.sqlite is unreadable
+- FDA-skip flag persisted in `config.json` across dialog instances; cleared on actual FDA grant; subtle hint when revisiting onboarding after a previous skip
+- 9 new i18n keys (de+en) covering the FDA onboarding step and dialogs
+
+### Fixed
+
+- Import failure on macOS Sequoia when the bundled app lacks Full Disk Access: pre-import readability check (`PRAGMA schema_version` against `Photos.sqlite`) now maps `OperationalError` to a structured `error.full_disk_access_missing` marker and aborts cleanly instead of looping single-file retries with cryptic SQLite errors
+- Mid-session TCC revocation handling: orchestrator scans `ImportResult.errors` for the structured marker and triggers the dialog once (one-shot guard), cancels the import, and skips fallback
+
 ## [1.0.0] — 2026-04-11
 
 ### Added

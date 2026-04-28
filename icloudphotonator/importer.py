@@ -4,12 +4,15 @@ import csv
 import json
 import logging
 import os
+import sqlite3
 import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
+
+from .i18n import t
 
 
 logger = logging.getLogger("icloudphotonator")
@@ -101,12 +104,33 @@ class PhotoImporter:
                 error_msg = f"{type(exc).__module__}.{type(exc).__name__}"
             if "Abort" in type(exc).__name__ and not parts:
                 error_msg = "osxphotos aborted — exiftool may be missing (https://exiftool.org/)"
+
+            # Detect missing Full Disk Access: sqlite3 cannot open the
+            # Photos library database. Walk the chain to find the signature.
+            fda_match = False
+            current = exc
+            seen_fda: set[int] = set()
+            while current is not None and id(current) not in seen_fda:
+                seen_fda.add(id(current))
+                if (
+                    isinstance(current, sqlite3.OperationalError)
+                    and "unable to open database file" in str(current).lower()
+                ):
+                    combined = " ".join(parts).lower()
+                    library_str = str(library).lower() if library is not None else ""
+                    if ".photoslibrary" in combined or ".photoslibrary" in library_str:
+                        fda_match = True
+                        break
+                current = getattr(current, '__cause__', None) or getattr(current, '__context__', None)
+            if fda_match:
+                error_msg = t("error.full_disk_access_missing")
             logger.error("Resolved error message for report: %s", error_msg)
             return self._result_from_report(
                 report_path=report_path,
                 fallback_success=False,
                 fallback_error=error_msg,
                 file_count=len(file_paths),
+                full_disk_access_missing=fda_match,
             )
 
         return self._result_from_report(report_path=report_path, fallback_success=True)
@@ -249,6 +273,7 @@ class PhotoImporter:
         fallback_success: bool,
         fallback_error: str | None = None,
         file_count: int = 0,
+        full_disk_access_missing: bool = False,
     ) -> ImportResult:
         parsed = self._parse_report(report_path) if report_path.exists() else ImportResult(
             success=fallback_success,
@@ -265,7 +290,10 @@ class PhotoImporter:
             if parsed.error_count == 0:
                 parsed.error_count = file_count
             if fallback_error and not parsed.errors:
-                parsed.errors.append({"file": "", "error": fallback_error})
+                entry: dict = {"file": "", "error": fallback_error}
+                if full_disk_access_missing:
+                    entry["full_disk_access_missing"] = True
+                parsed.errors.append(entry)
 
         if parsed.report_path is None and report_path.exists():
             parsed.report_path = report_path
