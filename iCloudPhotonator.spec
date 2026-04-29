@@ -195,7 +195,7 @@ exe = EXE(
     argv_emulation=False,
     target_arch=None,
     codesign_identity='iCloudPhotonator Dev',
-    entitlements_file=None,
+    entitlements_file=str(PROJECT_ROOT / "packaging" / "entitlements.plist"),
 )
 coll = COLLECT(
     exe,
