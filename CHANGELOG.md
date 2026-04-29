@@ -4,6 +4,17 @@ All notable changes to iCloudPhotonator will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-04-29
+
+### Fixed
+- **macOS Automation permission prompt now appears correctly.** The hardened runtime previously blocked Apple Events silently because the entitlement was missing, so the app never showed up in *System Settings → Privacy & Security → Automation*. The build now ships with a proper entitlements.plist that grants `com.apple.security.automation.apple-events` and the standard PyInstaller exceptions (allow-unsigned-executable-memory, disable-library-validation, allow-jit, allow-dyld-environment-variables).
+
+### Upgrade note
+- If you previously installed v1.0.1, run this in Terminal once before launching v1.0.2 to clear stale TCC entries:
+  ```
+  tccutil reset AppleEvents com.hanselstner.icloudphotonator
+  ```
+
 ## [1.0.1] — 2026-04-28
 
 ### Added
