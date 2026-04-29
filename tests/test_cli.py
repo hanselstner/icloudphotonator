@@ -16,7 +16,7 @@ def test_version_works() -> None:
     result = CliRunner().invoke(main, ["--version"])
 
     assert result.exit_code == 0
-    assert "1.0.1" in result.output
+    assert "1.0.2" in result.output
 
 
 def test_import_photos_help_shows_expected_options() -> None:

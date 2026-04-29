@@ -60,7 +60,7 @@ def _get_version() -> str:
                     return line.split("=", 1)[1].strip().strip('"').strip("'")
     except Exception:
         pass
-    return "1.0.1"
+    return "1.0.2"
 
 
 def _get_app_icon_path() -> Path:

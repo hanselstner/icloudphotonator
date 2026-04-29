@@ -152,8 +152,12 @@ fi
 # Sign main executable
 sign_one "$APP_PATH/Contents/MacOS/$APP_NAME"
 
-# Finally sign the .app bundle itself
-sign_one "$APP_PATH"
+# Finally sign the .app bundle itself with hardened-runtime entitlements
+# (Apple Events automation requires com.apple.security.automation.apple-events;
+# applied only to the outer bundle, not to nested .dylibs/.so files.)
+codesign --force --options runtime --timestamp \
+  --entitlements "$PROJECT_ROOT/packaging/entitlements.plist" \
+  --sign "$SIGNING_IDENTITY" "$APP_PATH" >/dev/null
 
 codesign --verify --deep --strict --verbose=2 "$APP_PATH" \
   || fail "codesign verification failed"

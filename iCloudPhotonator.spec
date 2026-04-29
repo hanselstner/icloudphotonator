@@ -6,7 +6,7 @@ import customtkinter
 from PyInstaller.utils.hooks import collect_all
 
 APP_NAME = "iCloudPhotonator"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 BUNDLE_IDENTIFIER = "com.hanselstner.icloudphotonator"
 PROJECT_ROOT = Path(SPECPATH)
 ENTRYPOINT = PROJECT_ROOT / "icloudphotonator" / "__main__.py"
@@ -195,7 +195,7 @@ exe = EXE(
     argv_emulation=False,
     target_arch=None,
     codesign_identity='iCloudPhotonator Dev',
-    entitlements_file=None,
+    entitlements_file=str(PROJECT_ROOT / "packaging" / "entitlements.plist"),
 )
 coll = COLLECT(
     exe,
