@@ -28,7 +28,7 @@ else:
 
 from icloudphotonator.i18n import t, load_locale, get_locale
 from icloudphotonator.importer import find_photo_libraries
-from icloudphotonator.logging_config import setup_logging
+from icloudphotonator.logging_config import read_log_tail, setup_logging
 from icloudphotonator.persistence import APP_DIR
 from icloudphotonator.settings import ImportSettings
 
@@ -796,14 +796,18 @@ else:
     class FullDiskAccessDialog(ctk.CTkToplevel):
         """Modal dialog shown when an import is blocked by missing Full Disk Access."""
 
+        _COLLAPSED_SIZE = (480, 280)
+        _EXPANDED_SIZE = (560, 520)
+
         def __init__(self, master):
             super().__init__(master)
             self.title(t("dialog.full_disk_title"))
             self.resizable(False, False)
             self.grab_set()
             self.configure(fg_color=BG_PRIMARY)
+            self._details_visible = False
             self._build_ui()
-            _center_window(self, 480, 280, parent=master)
+            _center_window(self, *self._COLLAPSED_SIZE, parent=master)
 
         def _build_ui(self) -> None:
             ctk.CTkLabel(
@@ -823,7 +827,7 @@ else:
             self._status_label.pack(padx=24, pady=(0, 8))
 
             btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-            btn_frame.pack(padx=24, pady=(0, 20))
+            btn_frame.pack(padx=24, pady=(0, 12))
             ctk.CTkButton(
                 btn_frame, text=t("onboarding.open_full_disk_settings"),
                 width=180, height=32, corner_radius=8,
@@ -845,6 +849,49 @@ else:
                 command=self._restart,
             ).pack(side="left", padx=4)
 
+            self._details_toggle_btn = ctk.CTkButton(
+                self, text=t("dialog.show_details"),
+                font=ctk.CTkFont(size=11, underline=True),
+                fg_color="transparent", hover=False, text_color=ACCENT_BLUE,
+                width=20, height=20, command=self._toggle_details,
+            )
+            self._details_toggle_btn.pack(padx=24, pady=(0, 8))
+
+            self._details_frame = ctk.CTkFrame(self, fg_color="transparent")
+            ctk.CTkLabel(
+                self._details_frame, text=t("dialog.log_tail_label"),
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=TEXT_SECONDARY, anchor="w",
+            ).pack(fill="x", padx=24, pady=(0, 4))
+            self._log_tail_view = ctk.CTkTextbox(
+                self._details_frame, height=180, corner_radius=8,
+                font=ctk.CTkFont(family="Menlo", size=10),
+                fg_color="#111827", text_color="#f3f4f6",
+                wrap="none", state="disabled",
+            )
+            self._log_tail_view.pack(fill="both", expand=True, padx=24, pady=(0, 16))
+
+        def _toggle_details(self) -> None:
+            if self._details_visible:
+                self._details_frame.pack_forget()
+                self._details_toggle_btn.configure(text=t("dialog.show_details"))
+                self._details_visible = False
+                _center_window(self, *self._COLLAPSED_SIZE, parent=self.master)
+            else:
+                self._refresh_log_tail()
+                self._details_frame.pack(fill="both", expand=True, padx=0, pady=(0, 0))
+                self._details_toggle_btn.configure(text=t("dialog.hide_details"))
+                self._details_visible = True
+                _center_window(self, *self._EXPANDED_SIZE, parent=self.master)
+
+        def _refresh_log_tail(self) -> None:
+            lines = read_log_tail(LOG_FILE_PATH, max_lines=40)
+            self._log_tail_view.configure(state="normal")
+            self._log_tail_view.delete("1.0", "end")
+            self._log_tail_view.insert("1.0", "\n".join(lines) if lines else "—")
+            self._log_tail_view.see("end")
+            self._log_tail_view.configure(state="disabled")
+
         def _open_settings(self) -> None:
             _open_full_disk_access_settings()
 
@@ -856,6 +903,8 @@ else:
                     text=t("onboarding.full_disk_not_granted"),
                     text_color=WARNING,
                 )
+                if self._details_visible:
+                    self._refresh_log_tail()
 
         def _restart(self) -> None:
             _restart_app()
