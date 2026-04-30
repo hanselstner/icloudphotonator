@@ -22,7 +22,6 @@ set -euo pipefail
 SIGNING_IDENTITY='Developer ID Application: e-Networkers GmbH (9MK4SNL8ZA)'
 NOTARY_PROFILE='iCloudPhotonator'
 GITHUB_REPO='hanselstner/icloudphotonator'
-RELEASE_ID='306769657'
 
 APP_NAME='iCloudPhotonator'
 BUNDLE_ID='com.hanselstner.icloudphotonator'
@@ -224,7 +223,7 @@ fi
 if (( SKIP_UPLOAD )); then
   warn "Step 7/8 — Skipped (--skip-upload)"
 else
-  log "Step 7/8 — Uploading to GitHub release $RELEASE_ID"
+  log "Step 7/8 — Resolving GitHub release for tag $VERSION"
 
   GH_TOKEN="$(printf 'protocol=https\nhost=github.com\n\n' \
     | git credential fill 2>/dev/null \
@@ -233,6 +232,21 @@ else
 
   API="https://api.github.com/repos/$GITHUB_REPO"
   UPLOAD="https://uploads.github.com/repos/$GITHUB_REPO"
+
+  RELEASE_ID="$(curl -fsSL \
+    -H "Authorization: token $GH_TOKEN" \
+    -H 'Accept: application/vnd.github+json' \
+    "$API/releases/tags/$VERSION" 2>/dev/null \
+    | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("id",""))
+except Exception: pass' 2>/dev/null \
+    || true)"
+
+  if [[ -z "${RELEASE_ID:-}" ]]; then
+    fail "Could not resolve release id for tag '$VERSION' on $GITHUB_REPO. Did you create the release first? e.g. 'gh release create $VERSION --notes-file RELEASE_NOTES.md'"
+  fi
+
+  log "Uploading to GitHub release $RELEASE_ID (tag $VERSION)"
 
   existing_id="$(curl -fsSL \
     -H "Authorization: token $GH_TOKEN" \

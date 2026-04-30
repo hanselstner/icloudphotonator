@@ -58,12 +58,16 @@ This runs the full 8-step pipeline:
 Examples:
 
 ```bash
-# Build a 1.0.1 release end-to-end
-./scripts/build_release.sh --version 1.0.1
+# Build a v1.0.2 release end-to-end (tag must already exist on GitHub)
+./scripts/build_release.sh --version v1.0.2
 
 # Local dry-run: build + sign only, no notarization, no upload
 ./scripts/build_release.sh --skip-notarize --skip-upload
 ```
+
+The `--version` value is used both as the DMG version suffix and as the
+GitHub release **tag** to upload to. Create the tag/release first, e.g.
+`gh release create v1.0.2 --notes-file RELEASE_NOTES.md`.
 
 ## Manual Steps
 
@@ -152,5 +156,7 @@ Fix the spec and re-run `./scripts/build_release.sh`.
 
 - Ensure `git credential fill` returns a token with `repo` scope for `github.com`.
   Test with: `printf 'protocol=https\nhost=github.com\n\n' | git credential fill`
-- Confirm `RELEASE_ID` in the script still matches the target release on GitHub
-  (`gh release list` or the release URL).
+- The script resolves the release id from the `--version` tag at runtime via
+  the GitHub API. If you see *"Could not resolve release id for tag …"*, the
+  tag does not exist yet — create the release first with
+  `gh release create <tag> --notes-file RELEASE_NOTES.md` (e.g. `v1.0.2`).
