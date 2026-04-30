@@ -4,6 +4,12 @@ All notable changes to iCloudPhotonator will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `scripts/build_release.sh` now resolves the GitHub release ID automatically from the `--version` tag via the GitHub API; manual `sed` patches between releases are no longer required.
+- `RELEASE.md` examples updated to v1.0.2.
+
 ## [1.0.2] - 2026-04-29
 
 ### Fixed
