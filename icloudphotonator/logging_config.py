@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -86,3 +87,19 @@ class _BufferHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         self._buffer.add(record.levelname, self.format(record))
+
+
+def read_log_tail(path: Path, max_lines: int = 40) -> list[str]:
+    """Return the last *max_lines* lines from the log file at *path*.
+
+    Robust against missing/empty files and large files (uses a bounded
+    deque, so memory stays O(max_lines) regardless of file size).
+    """
+    if max_lines <= 0:
+        return []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            tail = deque(fh, maxlen=max_lines)
+    except (FileNotFoundError, IsADirectoryError, PermissionError, OSError):
+        return []
+    return [line.rstrip("\n") for line in tail]
