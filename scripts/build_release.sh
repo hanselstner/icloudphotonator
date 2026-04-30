@@ -237,12 +237,14 @@ else
     -H "Authorization: token $GH_TOKEN" \
     -H 'Accept: application/vnd.github+json' \
     "$API/releases/tags/$VERSION" 2>/dev/null \
-    | python3 -c 'import json,sys
-try: print(json.load(sys.stdin).get("id",""))
-except Exception: pass' 2>/dev/null \
+    | python3 -c 'import json, sys
+try:
+    print(json.load(sys.stdin)["id"])
+except Exception as e:
+    print(f"# release lookup parse failed: {e}", file=sys.stderr)' \
     || true)"
 
-  if [[ -z "${RELEASE_ID:-}" ]]; then
+  if ! [[ "${RELEASE_ID:-}" =~ ^[0-9]+$ ]]; then
     fail "Could not resolve release id for tag '$VERSION' on $GITHUB_REPO. Did you create the release first? e.g. 'gh release create $VERSION --notes-file RELEASE_NOTES.md'"
   fi
 
