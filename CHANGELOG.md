@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Error dialogs (FullDiskAccessDialog) now include a collapsible "Show details" section displaying the last 40 lines of the log file, so users can paste the relevant context directly without opening the log manually.
+
 ### Changed
 - `scripts/build_release.sh` now resolves the GitHub release ID automatically from the `--version` tag via the GitHub API; manual `sed` patches between releases are no longer required.
 - `RELEASE.md` examples updated to v1.0.2.
