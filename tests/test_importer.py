@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 
@@ -302,3 +303,46 @@ def test_run_subprocess_sigterm_then_sigkill_when_terminate_ignored(
     assert fake.terminated, "process.terminate() must be called on first timeout"
     assert fake.killed, "process.kill() must be called when SIGTERM is ignored"
     assert fake._communicate_calls == 3
+
+
+
+# ---------------------------------------------------------------------------
+# _build_command: dev vs. frozen (PyInstaller) dispatch
+# ---------------------------------------------------------------------------
+
+
+def _build_command_args(tmp_path: Path) -> dict:
+    """Common kwargs for ``PhotoImporter._build_command``."""
+    return {
+        "file_paths": [tmp_path / "a.jpg"],
+        "skip_dups": True,
+        "auto_live": True,
+        "use_exiftool": True,
+        "album": "Album",
+        "report_path": tmp_path / "report.csv",
+        "library": None,
+    }
+
+
+def test_build_command_uses_python_module_in_dev(tmp_path: Path, monkeypatch) -> None:
+    """In dev mode (sys.frozen unset) we invoke ``python -m osxphotos import``."""
+    importer = _make_importer(monkeypatch)
+    # Ensure no leftover sys.frozen from another test.
+    monkeypatch.delattr(sys, "frozen", raising=False)
+
+    cmd = importer._build_command(**_build_command_args(tmp_path))
+
+    assert cmd[:4] == [sys.executable, "-m", "osxphotos", "import"]
+    assert "--run-osxphotos" not in cmd
+
+
+def test_build_command_uses_argv_marker_in_frozen(tmp_path: Path, monkeypatch) -> None:
+    """In a frozen PyInstaller bundle we re-invoke ourselves via ``--run-osxphotos``."""
+    importer = _make_importer(monkeypatch)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "/fake/app")
+
+    cmd = importer._build_command(**_build_command_args(tmp_path))
+
+    assert cmd[:3] == ["/fake/app", "--run-osxphotos", "import"]
+    assert "-m" not in cmd

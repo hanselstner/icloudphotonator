@@ -1,5 +1,17 @@
 import sys
 
+# Argv-marker dispatch for the frozen PyInstaller bundle: when re-invoking
+# ourselves as an osxphotos subprocess we cannot rely on `python -m osxphotos`
+# because sys.executable is the bundle bootloader (which does not honour -m).
+# This branch must run BEFORE any click decorators or icloudphotonator.* imports
+# so that click never sees the `--run-osxphotos` argv and the GUI/app chain is
+# not loaded inside the subprocess.
+if len(sys.argv) >= 2 and sys.argv[1] == "--run-osxphotos":
+    sys.argv = ["osxphotos"] + sys.argv[2:]
+    from osxphotos.cli import cli_main
+
+    sys.exit(cli_main() or 0)
+
 import click
 
 from icloudphotonator import __version__

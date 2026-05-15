@@ -204,13 +204,16 @@ class PhotoImporter:
         report_path: Path,
         library: Path | None,
     ) -> list[str]:
-        # Invoke osxphotos via `python -m osxphotos import ...`. Using
-        # sys.executable ensures we run in the same interpreter (and venv)
-        # as the parent process. NOTE: in a frozen PyInstaller bundle
-        # sys.executable points at the bundle binary, which does not honor
-        # `-m` — the build spec needs a separate osxphotos helper entry
-        # point for production. Tracked as a follow-up build-system task.
-        cmd: list[str] = [sys.executable, "-m", "osxphotos", "import"]
+        # Invoke osxphotos via `python -m osxphotos import ...` in dev mode.
+        # Using sys.executable ensures we run in the same interpreter (and
+        # venv) as the parent process. In a frozen PyInstaller bundle
+        # sys.executable points at the bundle bootloader, which does not
+        # honour `-m`; instead we re-invoke ourselves with the
+        # `--run-osxphotos` argv marker (see icloudphotonator/__main__.py).
+        if getattr(sys, "frozen", False):
+            cmd: list[str] = [sys.executable, "--run-osxphotos", "import"]
+        else:
+            cmd = [sys.executable, "-m", "osxphotos", "import"]
         cmd.extend(str(path) for path in file_paths)
         cmd.extend(["--report", str(report_path), "--no-progress"])
         if skip_dups:
