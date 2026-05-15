@@ -8,7 +8,7 @@ version = "1.0.2"
 description = "Intelligent photo migration helper for Apple Photos on macOS"
 requires-python = ">=3.13"
 dependencies = [
-  "osxphotos",
+  "osxphotos>=0.75.6",
   "click",
   "pydantic",
   "websockets",
