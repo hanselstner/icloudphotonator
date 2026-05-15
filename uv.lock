@@ -481,7 +481,7 @@ requires-dist = [
     { name = "aiohttp" },
     { name = "click" },
     { name = "customtkinter", specifier = ">=5.2.2" },
-    { name = "osxphotos" },
+    { name = "osxphotos", specifier = ">=0.75.6" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "pydantic" },
     { name = "websockets" },
