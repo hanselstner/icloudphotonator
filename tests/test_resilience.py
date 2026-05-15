@@ -37,6 +37,34 @@ def test_network_monitor_check_path(tmp_path: Path, exists: bool) -> None:
     assert monitor._check_path() is exists
 
 
+def test_network_monitor_returns_false_when_mount_root_unmounted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "share"
+    source.mkdir()
+    mount_root = tmp_path / "volume"
+    mount_root.mkdir()
+
+    monitor = NetworkMonitor(source, mount_root=mount_root)
+
+    monkeypatch.setattr("os.path.ismount", lambda p: False)
+    assert monitor._check_path() is False
+
+
+def test_network_monitor_uses_path_check_when_mount_root_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "share"
+    source.mkdir()
+    mount_root = tmp_path / "volume"
+    mount_root.mkdir()
+
+    monitor = NetworkMonitor(source, mount_root=mount_root)
+
+    monkeypatch.setattr("os.path.ismount", lambda p: True)
+    assert monitor._check_path() is True
+
+
 @pytest.mark.asyncio
 async def test_file_operation_guard_copy_with_timeout(tmp_path: Path) -> None:
     src = tmp_path / "source.jpg"

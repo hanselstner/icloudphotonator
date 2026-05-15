@@ -153,9 +153,15 @@ async def test_start_import_checkpoints_db_on_shutdown(
 class StubNetworkMonitor:
     instances: list["StubNetworkMonitor"] = []
 
-    def __init__(self, path: Path, check_interval: float = 10.0) -> None:
+    def __init__(
+        self,
+        path: Path,
+        check_interval: float = 10.0,
+        mount_root: Path | None = None,
+    ) -> None:
         self.path = path
         self.check_interval = check_interval
+        self.mount_root = mount_root
         self.disconnect_callbacks: list = []
         self.reconnect_callbacks: list = []
         self.started = False
@@ -1220,3 +1226,96 @@ async def test_fda_one_shot_flag_resets_on_new_import_session(
     orchestrator._fda_callback_emitted = False
     orchestrator._emit_full_disk_access_error()
     assert len(fda_calls) == 2
+
+
+
+# ---------------------------------------------------------------------------
+# Volume watchdog + caffeinate
+# ---------------------------------------------------------------------------
+
+
+class _FakeCaffeinateProc:
+    def __init__(self) -> None:
+        self.pid = 4242
+        self.terminated = False
+        self.killed = False
+        self._alive = True
+
+    def poll(self):
+        return None if self._alive else 0
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self._alive = False
+
+    def kill(self) -> None:
+        self.killed = True
+        self._alive = False
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+
+def test_resolve_mount_root_returns_existing_mount(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "volume" / "Photos"
+    source.mkdir(parents=True)
+    mount = tmp_path / "volume"
+
+    monkeypatch.setattr("os.path.ismount", lambda p: Path(p) == mount.resolve())
+    result = ImportOrchestrator._resolve_mount_root(source)
+    assert result == mount.resolve()
+
+
+def test_start_and_stop_caffeinate_spawns_subprocess(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_proc = _FakeCaffeinateProc()
+    popen_calls: list[list[str]] = []
+
+    def fake_popen(args, **kwargs):
+        popen_calls.append(args)
+        return fake_proc
+
+    monkeypatch.setattr("icloudphotonator.orchestrator.subprocess.Popen", fake_popen)
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    orchestrator._settings.keep_system_awake_during_import = True
+
+    orchestrator._start_caffeinate()
+    assert len(popen_calls) == 1
+    assert popen_calls[0][:2] == ["caffeinate", "-dimsuw"]
+    assert orchestrator._caffeinate_proc is fake_proc
+
+    orchestrator._stop_caffeinate()
+    assert fake_proc.terminated is True
+    assert orchestrator._caffeinate_proc is None
+
+
+def test_start_caffeinate_respects_setting_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    popen_calls: list = []
+    monkeypatch.setattr(
+        "icloudphotonator.orchestrator.subprocess.Popen",
+        lambda *a, **kw: popen_calls.append(a) or _FakeCaffeinateProc(),
+    )
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    orchestrator._settings.keep_system_awake_during_import = False
+
+    orchestrator._start_caffeinate()
+    assert popen_calls == []
+    assert orchestrator._caffeinate_proc is None
+
+
+def test_source_volume_available_detects_unmount(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    mount_root = tmp_path / "volume"
+    mount_root.mkdir()
+    orchestrator._source_mount_root = mount_root
+
+    monkeypatch.setattr("os.path.ismount", lambda p: False)
+    assert orchestrator._source_volume_available() is False
+
+    monkeypatch.setattr("os.path.ismount", lambda p: True)
+    assert orchestrator._source_volume_available() is True
+
+
+def test_source_volume_available_true_without_mount_root(tmp_path: Path) -> None:
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    orchestrator._source_mount_root = None
+    assert orchestrator._source_volume_available() is True
