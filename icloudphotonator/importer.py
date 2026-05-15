@@ -4,7 +4,9 @@ import csv
 import json
 import logging
 import os
+import shlex
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -16,6 +18,19 @@ from .i18n import t
 
 
 logger = logging.getLogger("icloudphotonator")
+
+
+class _SubprocessImportError(RuntimeError):
+    """Raised when the osxphotos subprocess exits with a non-zero status.
+
+    Carries the captured combined stdout/stderr so callers can classify
+    the failure (Full Disk Access missing, click.Abort, etc.).
+    """
+
+    def __init__(self, message: str, returncode: int, output: str) -> None:
+        super().__init__(message)
+        self.returncode = returncode
+        self.output = output
 
 
 PICTURES_LIBRARY_DIR = Path.home() / "Pictures"
@@ -85,45 +100,11 @@ class PhotoImporter:
 
         try:
             self._run_import(file_paths, skip_dups, auto_live, use_exiftool, album, report_path, timeout, library)
-        except Exception as exc:
-            import traceback
-            logger.error("Import failed with exception: %s: %s", type(exc).__name__, exc)
-            logger.error("Full traceback:\n%s", traceback.format_exc())
-            # Walk the full exception chain to capture root causes
-            parts: list[str] = []
-            current: BaseException | None = exc
-            seen: set[int] = set()
-            while current is not None and id(current) not in seen:
-                seen.add(id(current))
-                msg = str(current).strip()
-                if msg:
-                    parts.append(msg)
-                current = getattr(current, '__cause__', None) or getattr(current, '__context__', None)
-            error_msg = " → ".join(parts) if parts else ""
+        except _SubprocessImportError as exc:
+            logger.error("osxphotos subprocess failed: rc=%s", exc.returncode)
+            error_msg, fda_match = self._classify_subprocess_failure(exc.output, library)
             if not error_msg:
-                error_msg = f"{type(exc).__module__}.{type(exc).__name__}"
-            if "Abort" in type(exc).__name__ and not parts:
-                error_msg = "osxphotos aborted — exiftool may be missing (https://exiftool.org/)"
-
-            # Detect missing Full Disk Access: sqlite3 cannot open the
-            # Photos library database. Walk the chain to find the signature.
-            fda_match = False
-            current = exc
-            seen_fda: set[int] = set()
-            while current is not None and id(current) not in seen_fda:
-                seen_fda.add(id(current))
-                if (
-                    isinstance(current, sqlite3.OperationalError)
-                    and "unable to open database file" in str(current).lower()
-                ):
-                    combined = " ".join(parts).lower()
-                    library_str = str(library).lower() if library is not None else ""
-                    if ".photoslibrary" in combined or ".photoslibrary" in library_str:
-                        fda_match = True
-                        break
-                current = getattr(current, '__cause__', None) or getattr(current, '__context__', None)
-            if fda_match:
-                error_msg = t("error.full_disk_access_missing")
+                error_msg = str(exc)
             logger.error("Resolved error message for report: %s", error_msg)
             return self._result_from_report(
                 report_path=report_path,
@@ -132,8 +113,31 @@ class PhotoImporter:
                 file_count=len(file_paths),
                 full_disk_access_missing=fda_match,
             )
+        except TimeoutError as exc:
+            logger.error("osxphotos subprocess timed out: %s", exc)
+            return self._result_from_report(
+                report_path=report_path,
+                fallback_success=False,
+                fallback_error=str(exc),
+                file_count=len(file_paths),
+            )
+        except Exception as exc:
+            import traceback
+            logger.error("Import failed with exception: %s: %s", type(exc).__name__, exc)
+            logger.error("Full traceback:\n%s", traceback.format_exc())
+            error_msg = str(exc).strip() or f"{type(exc).__module__}.{type(exc).__name__}"
+            return self._result_from_report(
+                report_path=report_path,
+                fallback_success=False,
+                fallback_error=error_msg,
+                file_count=len(file_paths),
+            )
 
-        return self._result_from_report(report_path=report_path, fallback_success=True)
+        return self._result_from_report(
+            report_path=report_path,
+            fallback_success=True,
+            file_count=len(file_paths),
+        )
 
     def _run_import(
         self,
@@ -146,44 +150,170 @@ class PhotoImporter:
         timeout: int,
         library: Path | None = None,
     ) -> None:
-        import concurrent.futures
-        import inspect
-        import os
+        # Run osxphotos as a subprocess so we can hard-kill it on timeout.
+        # The previous in-process ThreadPoolExecutor + Future.result(timeout)
+        # pattern could not interrupt a hung osxphotos call: the worker thread
+        # kept running and the surrounding `with` block waited on
+        # shutdown(wait=True), delaying the TimeoutError by minutes.
+        osxphotos_data_dir = self._ensure_osxphotos_data_dir()
 
-        import_cli = self._get_import_cli()
-        self._verbose_log: list[str] = []
+        env = os.environ.copy()
+        # Point osxphotos' SQLiteKVStore at our verified-writable data dir.
+        env["XDG_DATA_HOME"] = str(osxphotos_data_dir.parent)
 
-        def _verbose_callback(msg: object) -> None:
-            self._verbose_log.append(str(msg))
-
-        # Only pass verbose if the function signature supports it. Avoids
-        # relying on try/except TypeError which can mask unrelated errors
-        # and produce misleading chained exceptions.
-        try:
-            sig = inspect.signature(import_cli)
-            supports_verbose = "verbose" in sig.parameters
-        except (TypeError, ValueError):
-            supports_verbose = False
-
-        import_kwargs = dict(
-            files_or_dirs=tuple(str(path) for path in file_paths),
+        cmd = self._build_command(
+            file_paths=file_paths,
             skip_dups=skip_dups,
             auto_live=auto_live,
-            exiftool=use_exiftool,
-            no_progress=True,
-            report=str(report_path),
+            use_exiftool=use_exiftool,
+            album=album,
+            report_path=report_path,
+            library=library,
         )
-        if supports_verbose:
-            import_kwargs["verbose"] = _verbose_callback
-        if album:
-            import_kwargs["album"] = (album,)
-        if library is not None:
-            import_kwargs["library"] = str(library)
+        logger.info(
+            "Starting osxphotos subprocess (timeout=%ds, cwd=%s): %s",
+            timeout,
+            osxphotos_data_dir,
+            " ".join(shlex.quote(arg) for arg in cmd),
+        )
 
-        # Ensure osxphotos' data directory exists and is writable.
-        # osxphotos uses xdg_base_dirs.xdg_data_home() / "osxphotos" for its
-        # internal SQLiteKVStore. If this directory doesn't exist or can't be
-        # created, every import fails with "unable to open database file".
+        returncode, output = self._run_subprocess(
+            cmd,
+            timeout=timeout,
+            cwd=str(osxphotos_data_dir),
+            env=env,
+        )
+
+        if returncode != 0:
+            snippet = (output or "").strip()
+            snippet = snippet[-1000:] if snippet else "(no output captured)"
+            raise _SubprocessImportError(
+                f"osxphotos subprocess exited with code {returncode}: {snippet}",
+                returncode=returncode,
+                output=output or "",
+            )
+        logger.info("osxphotos subprocess completed successfully (rc=0)")
+
+    def _build_command(
+        self,
+        file_paths: list[Path],
+        skip_dups: bool,
+        auto_live: bool,
+        use_exiftool: bool,
+        album: str | None,
+        report_path: Path,
+        library: Path | None,
+    ) -> list[str]:
+        # Invoke osxphotos via `python -m osxphotos import ...`. Using
+        # sys.executable ensures we run in the same interpreter (and venv)
+        # as the parent process. NOTE: in a frozen PyInstaller bundle
+        # sys.executable points at the bundle binary, which does not honor
+        # `-m` — the build spec needs a separate osxphotos helper entry
+        # point for production. Tracked as a follow-up build-system task.
+        cmd: list[str] = [sys.executable, "-m", "osxphotos", "import"]
+        cmd.extend(str(path) for path in file_paths)
+        cmd.extend(["--report", str(report_path), "--no-progress"])
+        if skip_dups:
+            cmd.append("--skip-dups")
+        if auto_live:
+            cmd.append("--auto-live")
+        if use_exiftool:
+            cmd.append("--exiftool")
+        if album:
+            cmd.extend(["--album", album])
+        if library is not None:
+            cmd.extend(["--library", str(library)])
+        return cmd
+
+    def _run_subprocess(
+        self,
+        cmd: list[str],
+        timeout: int,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> tuple[int, str]:
+        """Run osxphotos as a subprocess with hard-kill on timeout.
+
+        On timeout: terminate(), wait up to 5s, then kill() and wait again.
+        Always raises TimeoutError after the kill sequence so the caller
+        sees a fast, deterministic timeout — not a 14-minute hang.
+
+        Returns (returncode, combined_stdout_stderr).
+        """
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            cwd=cwd,
+            env=env,
+        )
+        # Exposed for tests / debugging — last spawned process.
+        self._last_process = process
+        try:
+            stdout, _ = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "osxphotos subprocess hit %ds timeout — sending SIGTERM (pid=%s)",
+                timeout, process.pid,
+            )
+            process.terminate()
+            stdout = ""
+            try:
+                stdout, _ = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "osxphotos subprocess did not exit after SIGTERM — sending SIGKILL (pid=%s)",
+                    process.pid,
+                )
+                process.kill()
+                try:
+                    stdout, _ = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    logger.error(
+                        "osxphotos subprocess did not exit even after SIGKILL (pid=%s)",
+                        process.pid,
+                    )
+                    stdout = ""
+            if stdout:
+                logger.info("osxphotos partial output before kill:\n%s", stdout)
+            raise TimeoutError(f"osxphotos import timed out after {timeout}s")
+
+        if stdout:
+            logger.info("osxphotos subprocess output:\n%s", stdout)
+        return process.returncode, stdout or ""
+
+    def _classify_subprocess_failure(
+        self,
+        output: str,
+        library: Path | None,
+    ) -> tuple[str, bool]:
+        """Map subprocess output to a user-facing error message + FDA flag."""
+        text = output or ""
+        lower = text.lower()
+        # Full Disk Access missing: sqlite3 cannot open the .photoslibrary db.
+        library_str = str(library).lower() if library is not None else ""
+        if "unable to open database file" in lower and (
+            ".photoslibrary" in lower or ".photoslibrary" in library_str
+        ):
+            return t("error.full_disk_access_missing"), True
+        # Click prints "Aborted!" when the CLI raises click.Abort. Historically
+        # this was triggered by a missing exiftool binary in our environment.
+        stripped = text.strip()
+        if not stripped or stripped.lower().endswith("aborted!"):
+            return "osxphotos aborted — exiftool may be missing (https://exiftool.org/)", False
+        # Otherwise surface the tail of the captured output.
+        snippet = stripped[-500:]
+        return snippet, False
+
+    def _ensure_osxphotos_data_dir(self) -> Path:
+        """Locate (and verify writable) the osxphotos SQLiteKVStore dir.
+
+        osxphotos uses xdg_data_home() / "osxphotos" for its internal
+        SQLiteKVStore. If this directory doesn't exist or can't be created,
+        every import fails with "unable to open database file".
+        """
         try:
             from xdg_base_dirs import xdg_data_home
             osxphotos_data_dir = xdg_data_home() / "osxphotos"
@@ -205,7 +335,6 @@ class PhotoImporter:
             logger.warning("Using fallback data dir: %s", osxphotos_data_dir)
 
         # Verify sqlite3 can actually create a database in this directory.
-        import sqlite3
         test_db_path = osxphotos_data_dir / "_test_write.db"
         try:
             conn = sqlite3.connect(str(test_db_path))
@@ -224,37 +353,10 @@ class PhotoImporter:
                 conn.close()
                 test_db2.unlink(missing_ok=True)
                 logger.info("Fallback SQLite write test passed in %s", fallback_dir)
-                # Override XDG_DATA_HOME so osxphotos uses our fallback location.
-                os.environ["XDG_DATA_HOME"] = str(fallback_dir.parent)
-                logger.info("Set XDG_DATA_HOME=%s", fallback_dir.parent)
                 osxphotos_data_dir = fallback_dir
             except Exception as e2:
                 logger.error("Fallback SQLite write test ALSO FAILED: %s", e2)
-
-        # Also change CWD to a writable dir (belt and suspenders).
-        original_cwd = os.getcwd()
-
-        def _do_import() -> None:
-            os.chdir(str(osxphotos_data_dir))
-            try:
-                logger.info(
-                    "Starting import_cli with kwargs: %s",
-                    {k: v for k, v in import_kwargs.items() if k != "verbose"},
-                )
-                import_cli(**import_kwargs)
-                logger.info("import_cli completed successfully")
-            except Exception as e:
-                logger.error("import_cli failed: %s: %s", type(e).__name__, e)
-                raise
-            finally:
-                os.chdir(original_cwd)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_do_import)
-            try:
-                future.result(timeout=timeout)
-            except concurrent.futures.TimeoutError:
-                raise TimeoutError(f"osxphotos import timed out after {timeout}s")
+        return osxphotos_data_dir
 
     def _get_import_cli(self):
         try:
@@ -275,7 +377,30 @@ class PhotoImporter:
         file_count: int = 0,
         full_disk_access_missing: bool = False,
     ) -> ImportResult:
-        parsed = self._parse_report(report_path) if report_path.exists() else ImportResult(
+        # STRICT SUCCESS SEMANTICS: never report success when the report file
+        # is missing or empty while files were submitted. The previous
+        # behaviour (default success=True if no report) silently masked
+        # Photos.app hangs and produced false-positive "imported" counts.
+        report_exists = report_path.exists()
+        report_has_data = report_exists and report_path.stat().st_size > 0
+
+        if fallback_success and file_count > 0 and not report_has_data:
+            silent_msg = t("error.silent_failure_no_report")
+            logger.error(
+                "osxphotos subprocess exited 0 but report is %s (path=%s) — treating as silent failure",
+                "missing" if not report_exists else "empty",
+                report_path,
+            )
+            return ImportResult(
+                success=False,
+                imported_count=0,
+                skipped_count=0,
+                error_count=file_count,
+                errors=[{"file": "", "error": silent_msg}],
+                report_path=report_path if report_exists else None,
+            )
+
+        parsed = self._parse_report(report_path) if report_has_data else ImportResult(
             success=fallback_success,
             imported_count=0,
             skipped_count=0,
@@ -295,7 +420,7 @@ class PhotoImporter:
                     entry["full_disk_access_missing"] = True
                 parsed.errors.append(entry)
 
-        if parsed.report_path is None and report_path.exists():
+        if parsed.report_path is None and report_exists:
             parsed.report_path = report_path
         return parsed
 
