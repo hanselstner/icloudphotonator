@@ -35,6 +35,8 @@
   "progress.complete": "✅ Done",
   "progress.error": "⚠️ Error",
   "progress.permission_required": "⚠️ Permission required",
+  "photos.warming_up": "Preparing Photos.app…",
+  "photos.warming_up_long_hint": "First launch can take several minutes while Photos opens your library and finishes any pending iCloud sync. The app is waiting — please don't quit Photos.",
   "log.source_folder_chosen": "Source folder chosen: {path}",
   "log.import_started": "Import started...",
   "log.import_resumed": "Import is being resumed...",

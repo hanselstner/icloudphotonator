@@ -1319,3 +1319,22 @@ def test_source_volume_available_true_without_mount_root(tmp_path: Path) -> None
     orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
     orchestrator._source_mount_root = None
     assert orchestrator._source_volume_available() is True
+
+
+# ---------------------------------------------------------------------------
+# Photos warming-up state forwarding
+# ---------------------------------------------------------------------------
+
+
+def test_orchestrator_forwards_preflight_warming_state(tmp_path: Path) -> None:
+    orchestrator = ImportOrchestrator(tmp_path / "jobs.db")
+    events: list[bool] = []
+    orchestrator.on_warming(events.append)
+
+    orchestrator.preflight._emit_warming_state(True)
+    assert events == [True]
+    assert orchestrator._is_warming is True
+
+    orchestrator.preflight._emit_warming_state(False)
+    assert events == [True, False]
+    assert orchestrator._is_warming is False
