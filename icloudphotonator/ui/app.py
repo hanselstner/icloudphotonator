@@ -28,12 +28,12 @@ else:
 
 from icloudphotonator.i18n import t, load_locale, get_locale
 from icloudphotonator.importer import find_photo_libraries
+from icloudphotonator.launch_environment import detect_launch_environment
 from icloudphotonator.logging_config import read_log_tail, setup_logging
 from icloudphotonator.persistence import APP_DIR
 from icloudphotonator.settings import ImportSettings
 
 from .bridge import BackendBridge
-from icloudphotonator.launch_environment import detect_launch_environment
 
 if ctk is not None:
     from icloudphotonator.ui.dmg_launch_dialog import DmgLaunchDialog
@@ -349,6 +349,9 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
             if chosen:
                 self.add_log(t("log.source_rechosen", path=chosen))
 
+        def _check_launch_environment_warning(self) -> None:
+            _raise_missing_ui_support()
+
         def _run_startup_sequence(self) -> None:
             self._check_launch_environment_warning()
             self._show_onboarding()
@@ -415,6 +418,11 @@ else:
             card3 = self._card(container)
             self._spinbox_row(card3, "max_staging_size_gb", t("settings.max_staging"), 1, 50, 1, t("settings.gb"), is_float=True)
 
+            # --- System ---
+            self._section_label(container, t("settings.system"))
+            card_sys = self._card(container)
+            self._checkbox_row(card_sys, "keep_system_awake_during_import", t("settings.keep_awake"))
+
             # --- Language ---
             self._section_label(container, t("settings.language"))
             card4 = self._card(container)
@@ -479,6 +487,17 @@ else:
             spin.pack(side="left", padx=(0, 6))
             if unit:
                 ctk.CTkLabel(row, text=unit, font=ctk.CTkFont(size=11), text_color=TEXT_SECONDARY).pack(side="left")
+
+        def _checkbox_row(self, parent, key: str, label: str) -> None:
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", pady=3)
+            current = bool(getattr(self._settings, key))
+            var = tk.BooleanVar(value=current)
+            self._vars[key] = var
+            ctk.CTkCheckBox(
+                row, text=label, variable=var,
+                font=ctk.CTkFont(size=12),
+            ).pack(side="left", anchor="w")
 
         def _on_reset(self) -> None:
             defaults = ImportSettings()
