@@ -275,8 +275,12 @@ fi
 # ---------------------------------------------------------------------------
 # 8. Cleanup
 # ---------------------------------------------------------------------------
-log "Step 8/8 — Cleanup"
-rm -f "$DMG_PATH"
-log "Removed local DMG: $DMG_PATH"
+if (( SKIP_UPLOAD )); then
+  warn "Step 8/8 — Skipped cleanup (--skip-upload set, keeping DMG: $DMG_PATH)"
+else
+  log "Step 8/8 — Cleanup"
+  rm -f "$DMG_PATH"
+  log "Removed local DMG: $DMG_PATH"
+fi
 
 log "Release pipeline finished successfully (version $VERSION)"
