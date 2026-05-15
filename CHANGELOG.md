@@ -6,12 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-- Error dialogs (FullDiskAccessDialog) now include a collapsible "Show details" section displaying the last 40 lines of the log file, so users can paste the relevant context directly without opening the log manually.
+## [1.0.3] — 2026-05-15
+
+Stability release addressing persistent import failures reported on production machines (CTO log 2026-05-14). No new features; all fixes target known-bad failure modes.
+
+### Fixed
+- **Importer**: Strict success accounting — batches no longer report `success=True` when the osxphotos report CSV is missing or unparseable. Subprocess timeouts now actually kill the worker (process group `os.killpg` + 5s grace SIGTERM → SIGKILL); previously `Future.result(timeout=N)` only blocked the caller while the osxphotos process kept running indefinitely. Resolves "0 photos imported but success reported" and "30s timeout claim followed by 14-min silent gap".
+- **Volume resilience**: New volume watchdog detects when an external/network source disappears mid-import (e.g. USB auto-sleep) and aborts cleanly with a localized error instead of hanging in osxphotos. `caffeinate` is held during the import phase to prevent macOS from sleeping the system or display.
+- **App launch**: Detects DMG-mounted launches (`/Volumes/iCloudPhotonator*/...`) and App Translocation (random `/private/var/folders/.../AppTranslocation/...` paths). Shows a one-time warning dialog asking the user to drag the app to `/Applications` first — TCC entries are bound to the bundle path and don't transfer from the DMG copy.
+- **First-run UX**: Added "Warming up Photos.app" UI state with a 600s preflight timeout (was 30s). Photos.app on a cold launch with a large library can take several minutes to respond to the first AppleScript event; the previous 30s timeout produced spurious AppleScript -128 "User canceled" errors that aren't actually user cancellations.
+- **PyInstaller bundle**: Frozen app now dispatches osxphotos via a `--run-osxphotos` self-call instead of `sys.executable -m osxphotos`, which silently failed in the bundle (the app binary doesn't honour `-m`).
 
 ### Changed
-- `scripts/build_release.sh` now resolves the GitHub release ID automatically from the `--version` tag via the GitHub API; manual `sed` patches between releases are no longer required.
-- `RELEASE.md` examples updated to v1.0.2.
+- `osxphotos` dependency pinned to `>=0.75.6` (was unpinned). Includes the LetsMove-kill-on-hang fix landed in osxphotos v0.69. No transitive dependency bumps.
+- Error dialogs now show a tail of the last 40 log lines (collapsible) for easier diagnosis on user machines.
+- Build pipeline auto-detects RELEASE_ID from the version tag instead of requiring it to be passed manually.
+
+### Upgrade notes
+- No `tccutil reset` needed — entitlements are unchanged from v1.0.2.
+- If the previous v1.0.2 install was launched directly from the DMG, drag v1.0.3 to /Applications first to avoid the new translocation warning.
 
 ## [1.0.2] - 2026-04-29
 
