@@ -256,6 +256,9 @@ def test_run_startup_sequence_runs_onboarding_before_resume_check() -> None:
     calls: list[str] = []
 
     class DummyApp:
+        def _check_launch_environment_warning(self) -> None:
+            calls.append("launch_env")
+
         def _show_onboarding(self) -> None:
             calls.append("onboarding")
 
@@ -267,7 +270,7 @@ def test_run_startup_sequence_runs_onboarding_before_resume_check() -> None:
 
     app.ICloudPhotonatorApp._run_startup_sequence(DummyApp())
 
-    assert calls == ["onboarding", "source_access", "resume"]
+    assert calls == ["launch_env", "onboarding", "source_access", "resume"]
 
 
 def test_handle_full_disk_access_error_constructs_dialog(monkeypatch) -> None:
@@ -321,3 +324,149 @@ def test_handle_full_disk_access_error_skips_bridge_stop_when_idle(monkeypatch) 
     dialog_recorder.assert_called_once_with(dummy)
     dummy._bridge.stop.assert_not_called()
     dummy._finish_run.assert_called_once()
+
+
+
+# --- launch_environment detection ---
+
+
+def test_launch_environment_detects_dmg_volume_path() -> None:
+    from icloudphotonator.launch_environment import detect_launch_environment
+
+    env = detect_launch_environment("/Volumes/iCloudPhotonator/iCloudPhotonator.app/Contents/MacOS/iCloudPhotonator")
+
+    assert env.kind == "dmg"
+    assert env.is_risky is True
+
+
+def test_launch_environment_detects_app_translocation_path() -> None:
+    from icloudphotonator.launch_environment import detect_launch_environment
+
+    env = detect_launch_environment(
+        "/private/var/folders/xx/yy/T/AppTranslocation/ABC-123/d/iCloudPhotonator.app/Contents/MacOS/iCloudPhotonator"
+    )
+
+    assert env.kind == "translocation"
+    assert env.is_risky is True
+
+
+def test_launch_environment_returns_ok_for_applications_path() -> None:
+    from icloudphotonator.launch_environment import detect_launch_environment
+
+    env = detect_launch_environment("/Applications/iCloudPhotonator.app/Contents/MacOS/iCloudPhotonator")
+
+    assert env.kind == "ok"
+    assert env.is_risky is False
+
+
+def test_launch_environment_returns_ok_for_development_path() -> None:
+    from icloudphotonator.launch_environment import detect_launch_environment
+
+    env = detect_launch_environment("/Users/dev/code/icloudphotonator/.venv/bin/python")
+
+    assert env.kind == "ok"
+    assert env.is_risky is False
+
+
+def test_launch_environment_uses_meipass_when_no_path_given(monkeypatch) -> None:
+    import sys as _sys
+
+    from icloudphotonator.launch_environment import detect_launch_environment
+
+    monkeypatch.setattr(_sys, "_MEIPASS", "/Volumes/iCloudPhotonator 1/iCloudPhotonator.app/Contents/MacOS", raising=False)
+    try:
+        env = detect_launch_environment()
+    finally:
+        # monkeypatch removes attributes it added, but be defensive in case real attr existed
+        pass
+
+    assert env.kind == "dmg"
+    assert env.path.startswith("/Volumes/")
+
+
+# --- _check_launch_environment_warning dispatch ---
+
+
+def test_check_launch_environment_warning_skips_when_path_ok(monkeypatch) -> None:
+    """When the launch path is safe, no dialog is shown and no log entry is written."""
+    from icloudphotonator.launch_environment import LaunchEnvironment
+
+    monkeypatch.setattr(app, "_launch_warning_dismissed", False)
+    monkeypatch.setattr(
+        app, "detect_launch_environment", lambda: LaunchEnvironment(kind="ok", path="/Applications/iCloudPhotonator.app")
+    )
+    dialog_recorder = MagicMock()
+    monkeypatch.setattr(app, "DmgLaunchDialog", dialog_recorder)
+
+    class DummyApp:
+        def __init__(self) -> None:
+            self.logs: list[str] = []
+
+        def add_log(self, message: str) -> None:
+            self.logs.append(message)
+
+        def wait_window(self, dialog) -> None:  # pragma: no cover - shouldn't run
+            self.logs.append("waited")
+
+    dummy = DummyApp()
+    app.ICloudPhotonatorApp._check_launch_environment_warning(dummy)
+
+    dialog_recorder.assert_not_called()
+    assert dummy.logs == []
+
+
+def test_check_launch_environment_warning_shows_dialog_on_dmg(monkeypatch) -> None:
+    """When the launch path is risky, the dialog is constructed and shown."""
+    load_locale("de")
+    from icloudphotonator.launch_environment import LaunchEnvironment
+
+    monkeypatch.setattr(app, "_launch_warning_dismissed", False)
+    env = LaunchEnvironment(kind="dmg", path="/Volumes/iCloudPhotonator/x.app")
+    monkeypatch.setattr(app, "detect_launch_environment", lambda: env)
+
+    constructed: dict[str, object] = {}
+
+    class FakeDialog:
+        def __init__(self, master, environment, on_continue=None):
+            constructed["master"] = master
+            constructed["environment"] = environment
+            constructed["on_continue"] = on_continue
+            self.chosen_action = "continue"
+
+    monkeypatch.setattr(app, "DmgLaunchDialog", FakeDialog)
+
+    class DummyApp:
+        def __init__(self) -> None:
+            self.logs: list[str] = []
+
+        def add_log(self, message: str) -> None:
+            self.logs.append(message)
+
+        def wait_window(self, dialog) -> None:
+            self.logs.append("waited")
+
+    dummy = DummyApp()
+    app.ICloudPhotonatorApp._check_launch_environment_warning(dummy)
+
+    assert constructed["master"] is dummy
+    assert constructed["environment"] is env
+    assert dummy.logs[0].startswith("⚠️")
+    assert dummy.logs[-1] == "waited"
+    # "continue" must mark the session flag so the dialog isn't shown again
+    assert app._launch_warning_dismissed is True
+
+
+def test_check_launch_environment_warning_respects_session_flag(monkeypatch) -> None:
+    """Once the user picked Continue, the dialog is not shown again this session."""
+    monkeypatch.setattr(app, "_launch_warning_dismissed", True)
+    dialog_recorder = MagicMock()
+    monkeypatch.setattr(app, "DmgLaunchDialog", dialog_recorder)
+    monkeypatch.setattr(app, "detect_launch_environment", lambda: (_ for _ in ()).throw(AssertionError("should not be called")))
+
+    class DummyApp:
+        def add_log(self, message: str) -> None:  # pragma: no cover - shouldn't run
+            pass
+
+    app.ICloudPhotonatorApp._check_launch_environment_warning(DummyApp())
+
+    dialog_recorder.assert_not_called()

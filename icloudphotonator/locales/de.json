@@ -184,5 +184,12 @@
   "error.photos_not_installed": "Fotos.app wird benötigt, konnte aber auf diesem System nicht gefunden werden.",
   "error.check_network": "Überprüfe deine Netzwerkverbindung und versuche es erneut.",
   "error.photos_not_responding_friendly": "Fotos.app reagiert nicht. Die App wird automatisch versuchen, das Problem zu beheben.",
-  "error.permission_hint": "Bitte öffne Systemeinstellungen → Datenschutz & Sicherheit → Automation und erteile iCloudPhotonator Zugriff auf Fotos."
+  "error.permission_hint": "Bitte öffne Systemeinstellungen → Datenschutz & Sicherheit → Automation und erteile iCloudPhotonator Zugriff auf Fotos.",
+  "dmg_launch.title": "iCloudPhotonator läuft aus einem unsicheren Ort",
+  "dmg_launch.message": "Diese App wird gerade nicht aus dem Programme-Ordner ausgeführt. Macs Sicherheitsmechanismen (Festplattenvollzugriff, Automation) können dadurch unvorhersehbar versagen. Bitte verschiebe iCloudPhotonator in den Ordner „Programme“ und starte es erneut.",
+  "dmg_launch.move_btn": "In „Programme“ öffnen",
+  "dmg_launch.continue_btn": "Trotzdem fortfahren",
+  "dmg_launch.quit_btn": "Beenden",
+  "dmg_launch.translocation_hint": "Hinweis: macOS hat die App in einen temporären Quarantäne-Pfad verschoben (App Translocation). Erteile Berechtigungen neu, nachdem du sie nach „Programme“ verschoben hast.",
+  "log.launch_warning": "⚠️ App läuft aus einem unsicheren Pfad ({kind}): {path}"
 }
