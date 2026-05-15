@@ -5,6 +5,8 @@ import pytest
 
 from icloudphotonator import photos_preflight
 from icloudphotonator.photos_preflight import (
+    OSASCRIPT_TIMEOUT_FIRST_RUN,
+    OSASCRIPT_TIMEOUT_STEADY,
     PhotosPreflight,
     check_library_readable,
 )
@@ -89,3 +91,35 @@ def test_run_preflight_passes_when_library_readable_succeeds(
     assert result.passed is True
     assert result.errors == []
 
+
+def test_ensure_photos_responsive_first_run_emits_warming_and_uses_long_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pre = PhotosPreflight()
+    events: list[bool] = []
+    pre.on_warming_state_change(events.append)
+
+    assert pre.get_current_timeout() == OSASCRIPT_TIMEOUT_FIRST_RUN
+
+    monkeypatch.setattr(pre, "check_photos_responsive", lambda: True)
+    monkeypatch.setattr(pre, "_check_has_window", lambda: True)
+
+    assert pre.ensure_photos_responsive() is True
+
+    assert events == [True, False]
+    assert pre.is_warmed_up() is True
+    assert pre.get_current_timeout() == OSASCRIPT_TIMEOUT_STEADY
+
+
+def test_ensure_photos_responsive_steady_state_does_not_re_emit_warming(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pre = PhotosPreflight()
+    monkeypatch.setattr(pre, "check_photos_responsive", lambda: True)
+    monkeypatch.setattr(pre, "_check_has_window", lambda: True)
+    assert pre.ensure_photos_responsive() is True
+
+    events: list[bool] = []
+    pre.on_warming_state_change(events.append)
+    assert pre.ensure_photos_responsive() is True
+    assert events == []

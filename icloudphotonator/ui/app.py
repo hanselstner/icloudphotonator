@@ -974,6 +974,7 @@ else:
                 on_error=self._handle_error,
                 on_permission_error=self._handle_permission_error,
                 on_full_disk_access_error=self._handle_full_disk_access_error,
+                on_warming=self._handle_warming,
             )
 
             self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1214,6 +1215,20 @@ else:
                 fg_color=WARNING, hover_color="#E68600", text_color="#ffffff",
                 command=self._on_restart_photos,
             )
+            # Photos warming-up banner (shown during cold launch via _handle_warming)
+            self.warming_banner = ctk.CTkFrame(
+                self.main_frame, fg_color=("#FFF4E5", "#3a2a14"), corner_radius=8,
+            )
+            self.warming_label = ctk.CTkLabel(
+                self.warming_banner, text=t("photos.warming_up"),
+                font=ctk.CTkFont(size=13, weight="bold"), text_color=WARNING, anchor="w",
+            )
+            self.warming_label.pack(fill="x", padx=12, pady=(8, 2))
+            self.warming_hint = ctk.CTkLabel(
+                self.warming_banner, text=t("photos.warming_up_long_hint"),
+                font=ctk.CTkFont(size=11), text_color=TEXT_SECONDARY, anchor="w",
+            )
+            self.warming_hint.pack(fill="x", padx=12, pady=(0, 8))
             # Don't pack yet — shown via _handle_progress when needed
             ctrl_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
             ctrl_frame.pack(fill="x", pady=(0, 16))
@@ -1452,6 +1467,17 @@ else:
                     self.after(0, self.restart_photos_btn.pack_forget)
                 self.update_stats(payload)
 
+        def _handle_warming(self, active: bool) -> None:
+            def _apply() -> None:
+                if active:
+                    self.warming_banner.pack(
+                        fill="x", pady=(0, 8), before=self._controls_frame,
+                    )
+                else:
+                    self.warming_banner.pack_forget()
+
+            self.after(0, _apply)
+
         def _handle_complete(self) -> None:
             self.after(0, lambda: self._finish_run(t("progress.complete"), t("log.import_complete"), completed=True))
 
@@ -1491,6 +1517,7 @@ else:
             self.stop_btn.configure(state="disabled")
             self.retry_btn.configure(state="normal" if self._last_error_count > 0 else "disabled")
             self.restart_photos_btn.pack_forget()
+            self.warming_banner.pack_forget()
             self.browse_btn.configure(state="normal")
             self.album_entry.configure(state="normal")
             self.album_auto_btn.configure(state="normal")

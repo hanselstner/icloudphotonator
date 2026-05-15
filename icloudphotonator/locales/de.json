@@ -35,6 +35,8 @@
   "progress.complete": "✅ Fertig",
   "progress.error": "⚠️ Fehler",
   "progress.permission_required": "⚠️ Berechtigung erforderlich",
+  "photos.warming_up": "Photos.app wird vorbereitet…",
+  "photos.warming_up_long_hint": "Der erste Start kann mehrere Minuten dauern, während Photos deine Mediathek öffnet und ausstehende iCloud-Synchronisationen abschließt. Die App wartet — bitte Photos nicht beenden.",
   "log.source_folder_chosen": "Quellordner gewählt: {path}",
   "log.import_started": "Import gestartet...",
   "log.import_resumed": "Import wird fortgesetzt...",

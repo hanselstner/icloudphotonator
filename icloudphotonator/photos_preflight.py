@@ -8,6 +8,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 logger = logging.getLogger("icloudphotonator.preflight")
 
@@ -63,7 +64,12 @@ HEALTH_JPEG = bytes.fromhex(
     '00ffc40000ffda00080101000003100002000063ffd9'
 )
 
-OSASCRIPT_TIMEOUT = 15
+# First-run timeout covers Photos.app cold-launch (cloud-sync, library
+# indexing) which can take multiple minutes on large libraries; steady-state
+# timeout covers responsiveness after Photos has been warmed up once.
+OSASCRIPT_TIMEOUT_FIRST_RUN = 600
+OSASCRIPT_TIMEOUT_STEADY = 120
+OSASCRIPT_TIMEOUT = OSASCRIPT_TIMEOUT_STEADY
 
 
 def run_applescript(script: str) -> tuple[bool, str]:
@@ -94,6 +100,32 @@ class PreflightResult:
 
 class PhotosPreflight:
     """Pre-flight checks ensuring Apple Photos is ready for import."""
+
+    def __init__(self) -> None:
+        # Tracks whether ensure_photos_responsive() has already completed at
+        # least once in this session. Used to apply the longer first-run
+        # timeout/poll budget on cold launch and the steady-state budget after.
+        self._warmed_up: bool = False
+        self._warming_callbacks: list[Callable[[bool], None]] = []
+
+    def on_warming_state_change(self, callback: Callable[[bool], None]) -> None:
+        """Register a callback fired with True when warming starts, False when it ends."""
+        self._warming_callbacks.append(callback)
+
+    def is_warmed_up(self) -> bool:
+        """Return True once ensure_photos_responsive() has completed once."""
+        return self._warmed_up
+
+    def get_current_timeout(self) -> int:
+        """Return the active responsiveness budget (seconds) for ensure_photos_responsive."""
+        return OSASCRIPT_TIMEOUT_STEADY if self._warmed_up else OSASCRIPT_TIMEOUT_FIRST_RUN
+
+    def _emit_warming_state(self, active: bool) -> None:
+        for callback in list(self._warming_callbacks):
+            try:
+                callback(active)
+            except Exception:
+                logger.exception("Warming-state callback failed")
 
     def _run_applescript(self, script: str) -> tuple[bool, str]:
         """Run an AppleScript in-process via the standalone run_applescript helper."""
@@ -229,23 +261,42 @@ class PhotosPreflight:
     def ensure_photos_responsive(self) -> bool:
         """Quick responsiveness check with auto-recovery.
 
-        1. Ping Photos — if responsive, return True immediately.
-        2. Check automation permission — if missing, skip kill/restart (won't help).
-        3. Otherwise kill → restart → activate → re-check.
-        4. Up to *max_retries* recovery attempts.
+        First call in a session is treated as cold-launch: poll for up to
+        ``OSASCRIPT_TIMEOUT_FIRST_RUN`` seconds before falling back to
+        kill/restart, and fire warming-state callbacks so the UI can show a
+        "Photos.app is being prepared…" indicator. Subsequent calls use the
+        steady-state budget and the existing kill → restart → re-check loop.
         """
-        max_retries = 2
-        for attempt in range(1 + max_retries):
+        is_first_run = not self._warmed_up
+        timeout = self.get_current_timeout()
+        if is_first_run:
+            self._emit_warming_state(True)
+        try:
             if self.check_photos_responsive() and self._check_has_window():
-                if attempt > 0:
-                    logger.info(
-                        "Photos ready after %d recovery attempt(s).", attempt
-                    )
                 return True
-            if attempt < max_retries:
-                if not self.check_automation_permission():
-                    logger.error("Automation permission missing — kill/restart won't help.")
-                    return False
+
+            if not self.check_automation_permission():
+                logger.error("Automation permission missing — kill/restart won't help.")
+                return False
+
+            if is_first_run:
+                # Cold-launch: keep polling within the first-run budget before
+                # resorting to kill/restart. Photos.app may need several
+                # minutes to come up on large libraries.
+                logger.info(
+                    "Photos not yet responsive on cold launch — polling up to %ds.",
+                    timeout,
+                )
+                deadline = time.monotonic() + timeout
+                poll_interval = 5
+                while time.monotonic() < deadline:
+                    time.sleep(poll_interval)
+                    if self.check_photos_responsive() and self._check_has_window():
+                        logger.info("Photos became responsive during cold-launch poll.")
+                        return True
+
+            max_retries = 2
+            for attempt in range(max_retries):
                 logger.warning(
                     "Photos not responding — recovery attempt %d/%d",
                     attempt + 1,
@@ -254,6 +305,13 @@ class PhotosPreflight:
                 self._kill_photos()
                 self._start_photos()
                 self._activate_photos()
-        logger.error("Photos unreachable after %d recovery attempts.", max_retries)
-        return False
+                if self.check_photos_responsive() and self._check_has_window():
+                    logger.info("Photos ready after %d recovery attempt(s).", attempt + 1)
+                    return True
+            logger.error("Photos unreachable after %d recovery attempts.", max_retries)
+            return False
+        finally:
+            self._warmed_up = True
+            if is_first_run:
+                self._emit_warming_state(False)
 

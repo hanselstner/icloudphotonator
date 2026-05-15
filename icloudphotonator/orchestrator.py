@@ -79,7 +79,9 @@ class ImportOrchestrator:
         self._log_callbacks: list[Callable[[str], None]] = []
         self._permission_error_callbacks: list[Callable[[], None]] = []
         self._full_disk_access_error_callbacks: list[Callable[[], None]] = []
+        self._warming_callbacks: list[Callable[[bool], None]] = []
         self._fda_callback_emitted = False
+        self._is_warming = False
         self._active_job: Job | None = None
         self._network_monitor: NetworkMonitor | None = None
         self._network_pause_requested = False
@@ -89,6 +91,7 @@ class ImportOrchestrator:
         self._caffeinate_proc: subprocess.Popen | None = None
         self._source_mount_root: Path | None = None
         self.logger = logging.getLogger("icloudphotonator.orchestrator")
+        self.preflight.on_warming_state_change(self._on_preflight_warming)
 
     async def start_import(self, source_path: Path, job_id: str | None = None):
         """Main entry point. Runs the full import workflow."""
@@ -338,6 +341,28 @@ class ImportOrchestrator:
     def on_full_disk_access_error(self, callback: Callable[[], None]) -> None:
         """Register a callback fired when an import is blocked by missing Full Disk Access."""
         self._full_disk_access_error_callbacks.append(callback)
+
+    def on_warming(self, callback: Callable[[bool], None]) -> None:
+        """Register a callback for the Photos.app warming-up state.
+
+        Fired with True when the first responsiveness check of a session
+        begins (cold launch) and False once it returns.
+        """
+        self._warming_callbacks.append(callback)
+
+    def _on_preflight_warming(self, active: bool) -> None:
+        """Bridge PhotosPreflight warming events to the UI."""
+        self._is_warming = active
+        for callback in list(self._warming_callbacks):
+            try:
+                callback(active)
+            except Exception:
+                self.logger.exception("Warming callback failed")
+        if self._active_job is not None:
+            try:
+                self._notify_progress(self.get_job_stats(self._active_job.job_id))
+            except Exception:
+                self.logger.exception("Failed to notify progress for warming state")
 
     def _notify_progress(self, stats: dict):
         for callback in list(self._progress_callbacks):
@@ -1023,6 +1048,7 @@ class ImportOrchestrator:
             "paused": not self._paused.is_set(),
             "cancelled": self._cancelled,
             "pause_reason": self._pause_reason,
+            "warming_up": self._is_warming,
         }
 
     def _transition_job(self, job: Job, target: JobState, action: str, details: str | None = None) -> None:
