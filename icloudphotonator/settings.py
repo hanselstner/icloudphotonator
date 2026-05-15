@@ -20,6 +20,8 @@ class ImportSettings:
     restart_wait_seconds: int = 120
     # Staging
     max_staging_size_gb: float = 10.0
+    # System power management
+    keep_system_awake_during_import: bool = True
     # Language
     locale: str = "en"
 

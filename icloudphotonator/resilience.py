@@ -31,9 +31,11 @@ class NetworkMonitor:
         check_interval: float = 10.0,
         on_disconnect: Callable[[], Any] | None = None,
         on_reconnect: Callable[[], Any] | None = None,
+        mount_root: Path | None = None,
     ) -> None:
         self._path = path
         self._check_interval = check_interval
+        self._mount_root = mount_root
         self._disconnect_callbacks: list[Callable[[], Any]] = []
         self._reconnect_callbacks: list[Callable[[], Any]] = []
         if on_disconnect is not None:
@@ -100,8 +102,14 @@ class NetworkMonitor:
                 logger.exception("Network monitor callback failed for %s", self._path)
 
     def _check_path(self) -> bool:
-        """Check if the network path is accessible."""
+        """Check if the network/volume path is still accessible."""
 
+        if self._mount_root is not None:
+            try:
+                if not os.path.ismount(str(self._mount_root)):
+                    return False
+            except OSError:
+                return False
         try:
             os.stat(self._path)
         except (OSError, PermissionError):

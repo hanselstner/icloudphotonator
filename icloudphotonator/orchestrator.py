@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import logging
+import os
 import subprocess
 import threading
 import unicodedata
@@ -85,6 +86,8 @@ class ImportOrchestrator:
         self._pause_reason: str | None = None
         self._escalation_level = 0
         self._imports_since_restart = 0
+        self._caffeinate_proc: subprocess.Popen | None = None
+        self._source_mount_root: Path | None = None
         self.logger = logging.getLogger("icloudphotonator.orchestrator")
 
     async def start_import(self, source_path: Path, job_id: str | None = None):
@@ -101,14 +104,27 @@ class ImportOrchestrator:
         job = Job(self.db, job_id) if job_id else Job(self.db)
         self._active_job = job
         self._stop_network_monitor()
+        self._stop_caffeinate()
         self._network_pause_requested = False
         save_active_job(job.job_id, job.source_path or source_path, self._db_path, self._active_job_path)
 
-        if Scanner(source_path, compute_hashes=False)._is_network_path(source_path):
-            self._network_monitor = NetworkMonitor(source_path, check_interval=10)
+        self._source_mount_root = self._resolve_mount_root(source_path)
+        is_network = Scanner(source_path, compute_hashes=False)._is_network_path(source_path)
+        is_external_volume = (
+            self._source_mount_root is not None
+            and str(self._source_mount_root).startswith("/Volumes/")
+        )
+        if is_network or is_external_volume:
+            self._network_monitor = NetworkMonitor(
+                source_path,
+                check_interval=10,
+                mount_root=self._source_mount_root,
+            )
             self._network_monitor.on_disconnect(self._on_network_lost)
             self._network_monitor.on_reconnect(self._on_network_restored)
             self._network_monitor.start()
+
+        self._start_caffeinate()
 
         scan_done = asyncio.Event()
         scan_task: asyncio.Task | None = None
@@ -174,6 +190,7 @@ class ImportOrchestrator:
             except Exception:
                 pass
             self._stop_network_monitor()
+            self._stop_caffeinate()
             if self._active_job is not None:
                 if self._active_job.state in {JobState.COMPLETED, JobState.CANCELLED}:
                     clear_active_job(self._active_job_path)
@@ -377,6 +394,79 @@ class ImportOrchestrator:
             self._network_monitor = None
         self._network_pause_requested = False
 
+    @staticmethod
+    def _resolve_mount_root(path: Path) -> Path | None:
+        """Walk up *path* until we find a mount point. Return ``None`` if not found."""
+        try:
+            current = Path(path).resolve()
+        except OSError:
+            current = Path(path)
+        seen: set[Path] = set()
+        while current not in seen:
+            seen.add(current)
+            try:
+                if os.path.ismount(str(current)):
+                    return current
+            except OSError:
+                return None
+            parent = current.parent
+            if parent == current:
+                return None
+            current = parent
+        return None
+
+    def _start_caffeinate(self) -> None:
+        """Start ``caffeinate -dimsuw <pid>`` so macOS does not sleep mid-import."""
+        if self._caffeinate_proc is not None:
+            return
+        if not getattr(self._settings, "keep_system_awake_during_import", True):
+            self.logger.info("caffeinate disabled via settings")
+            return
+        try:
+            self._caffeinate_proc = subprocess.Popen(
+                ["caffeinate", "-dimsuw", str(os.getpid())],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.logger.info("Started caffeinate pid=%s", self._caffeinate_proc.pid)
+        except (OSError, ValueError) as exc:
+            self.logger.warning("Failed to start caffeinate: %s", exc)
+            self._caffeinate_proc = None
+
+    def _stop_caffeinate(self) -> None:
+        """Terminate the caffeinate subprocess if it is running."""
+        proc = self._caffeinate_proc
+        if proc is None:
+            return
+        self._caffeinate_proc = None
+        if proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=2)
+            self.logger.info("Stopped caffeinate pid=%s", proc.pid)
+        except OSError as exc:
+            self.logger.warning("Failed to stop caffeinate: %s", exc)
+
+    def _source_volume_available(self) -> bool:
+        """Check that the source mount point is still mounted and the path exists."""
+        if self._source_mount_root is not None:
+            try:
+                if not os.path.ismount(str(self._source_mount_root)):
+                    return False
+            except OSError:
+                return False
+        if self._active_job is not None and self._active_job.source_path is not None:
+            try:
+                return Path(self._active_job.source_path).exists()
+            except OSError:
+                return False
+        return True
+
     async def _wait_if_paused(self):
         """Block if paused."""
         await self._paused.wait()
@@ -518,6 +608,10 @@ class ImportOrchestrator:
         consecutive_failed_batches = 0
         while not self._cancelled:
             await self._wait_if_paused()
+            if not self._source_volume_available():
+                self._emit_log(t("error.source_volume_unavailable"))
+                self.cancel()
+                break
             pending_rows = self.db.get_pending_files(job.job_id, limit=self.throttle.get_batch_size())
             if not pending_rows:
                 if scan_done_event is not None and not scan_done_event.is_set():
