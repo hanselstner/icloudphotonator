@@ -33,6 +33,12 @@ from icloudphotonator.persistence import APP_DIR
 from icloudphotonator.settings import ImportSettings
 
 from .bridge import BackendBridge
+from icloudphotonator.launch_environment import detect_launch_environment
+
+if ctk is not None:
+    from icloudphotonator.ui.dmg_launch_dialog import DmgLaunchDialog
+else:
+    DmgLaunchDialog = None  # type: ignore[assignment]
 
 LOG_FILE_PATH = Path.home() / ".icloudphotonator" / "logs" / "icloudphotonator.log"
 
@@ -40,6 +46,8 @@ APP_TITLE = "iCloudPhotonator"
 REPOSITORY_URL = "https://github.com/hanselstner/icloudphotonator"
 ACCENT_BLUE = "#007AFF"
 DEFAULT_ALBUM_NAME = "iCloudPhotonator Import"
+
+_launch_warning_dismissed = False
 
 
 def _get_version() -> str:
@@ -342,9 +350,14 @@ if ctk is None or tk is None or filedialog is None or messagebox is None:
                 self.add_log(t("log.source_rechosen", path=chosen))
 
         def _run_startup_sequence(self) -> None:
+            self._check_launch_environment_warning()
             self._show_onboarding()
             self._ensure_source_access_if_needed()
             self._check_for_incomplete_jobs()
+
+        def _check_launch_environment_warning(self) -> None:
+            """Placeholder: warn-on-DMG check is a no-op when Tk is unavailable."""
+            return
 
 
     def main() -> None:
@@ -951,10 +964,32 @@ else:
             self.after(0, self._run_startup_sequence)
 
         def _run_startup_sequence(self) -> None:
-            """Run startup checks in order: onboarding first, source access, resume checks last."""
+            """Run startup checks in order: launch-env warning, onboarding, source access, resume."""
+            self._check_launch_environment_warning()
             self._show_onboarding()
             self._ensure_source_access_if_needed()
             self._check_for_incomplete_jobs()
+
+        def _check_launch_environment_warning(self) -> None:
+            """Warn once per session when running from a DMG or translocation path."""
+            global _launch_warning_dismissed
+            if _launch_warning_dismissed:
+                return
+            environment = detect_launch_environment()
+            if not environment.is_risky:
+                return
+            self.add_log(
+                t("log.launch_warning", kind=environment.kind, path=environment.path)
+            )
+
+            def _mark_dismissed() -> None:
+                global _launch_warning_dismissed
+                _launch_warning_dismissed = True
+
+            dialog = DmgLaunchDialog(self, environment, on_continue=_mark_dismissed)
+            self.wait_window(dialog)
+            if getattr(dialog, "chosen_action", None) == "continue":
+                _launch_warning_dismissed = True
 
         def _ensure_source_access_if_needed(self) -> None:
             """If the last incomplete job's source folder is inaccessible, prompt the user."""

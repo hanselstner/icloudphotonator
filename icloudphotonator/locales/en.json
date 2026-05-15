@@ -185,5 +185,12 @@
   "settings.language_restart_hint": "Restart app to apply language change",
   "settings.seconds": "seconds",
   "settings.imports": "imports",
-  "settings.gb": "GB"
+  "settings.gb": "GB",
+  "dmg_launch.title": "iCloudPhotonator is running from an unsafe location",
+  "dmg_launch.message": "This app is not running from the Applications folder. macOS security features (Full Disk Access, Automation) can silently break in this state. Please move iCloudPhotonator to \"Applications\" and relaunch.",
+  "dmg_launch.move_btn": "Reveal \"Applications\"",
+  "dmg_launch.continue_btn": "Continue anyway",
+  "dmg_launch.quit_btn": "Quit",
+  "dmg_launch.translocation_hint": "Note: macOS placed the app into a quarantine sandbox (App Translocation). After moving the app to \"Applications\", re-grant the permissions.",
+  "log.launch_warning": "⚠️ App is running from an unsafe path ({kind}): {path}"
 }
