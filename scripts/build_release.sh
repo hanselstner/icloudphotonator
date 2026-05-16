@@ -188,11 +188,10 @@ log "App launched cleanly (no import / loader errors in 6s)"
 # ---------------------------------------------------------------------------
 log "Step 5/8 — Building DMG: $DMG_NAME"
 rm -f "$DMG_PATH"
-hdiutil create \
-  -volname "$APP_NAME" \
-  -srcfolder "$APP_PATH" \
-  -ov -format UDZO \
-  "$DMG_PATH" >/dev/null
+uv run dmgbuild \
+  -s scripts/dmg_settings.py \
+  "iCloudPhotonator $VERSION" \
+  "$DMG_PATH"
 
 sign_one "$DMG_PATH"
 log "DMG built and signed: $DMG_PATH"
