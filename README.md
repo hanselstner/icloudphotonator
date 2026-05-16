@@ -267,6 +267,34 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 ## Changelog
 
+### v1.0.4 — May 16, 2026
+
+- Full Disk Access UI visibility fix on macOS Tahoe: bundle now declares the full standard set of `NS*UsageDescription` keys, so the app reliably appears in System Settings → Privacy & Security → Full Disk Access
+- Early TCC-attribution probe ensures the FDA permission is registered against the bundle identity, not the parent terminal
+- Proper drag-to-Applications installer DMG with background and `/Applications` symlink (via `dmgbuild`)
+
+### v1.0.3 — May 15, 2026
+
+- Strict import success accounting: batches no longer falsely report success when the osxphotos CSV is missing or unparseable
+- Subprocess timeout now actually kills the worker (process-group SIGTERM → SIGKILL), fixing "30s timeout claim followed by 14-min silent gap"
+- Volume watchdog detects when an external/network source disappears mid-import and aborts cleanly
+- `caffeinate` held during import to prevent system/display sleep
+- DMG-mount and App Translocation detection with one-time warning dialog
+- Cold-Photos.app preflight extended from 30s to 600s; fixes spurious AppleScript -128 errors
+- `osxphotos` pinned to `>=0.75.6`
+
+### v1.0.2 — April 29, 2026
+
+- macOS Automation permission prompt now appears correctly; build ships with proper entitlements (`com.apple.security.automation.apple-events` + standard PyInstaller exceptions)
+- Upgrade note: run `tccutil reset AppleEvents com.hanselstner.icloudphotonator` once before launching v1.0.2 to clear stale TCC entries from v1.0.1
+
+### v1.0.1 — April 28, 2026
+
+- Full Disk Access onboarding step: 4-step wizard (Welcome → Automation → Full Disk Access → Ready) with deeplink to System Settings and live status check
+- Pre-import readability check on `Photos.sqlite` maps `OperationalError` to a structured `error.full_disk_access_missing` marker and aborts cleanly instead of cryptic SQLite retries
+- Mid-session TCC revocation: orchestrator scans `ImportResult.errors` for the marker and triggers an actionable dialog (Open / Check Again / Restart App)
+- 9 new i18n keys (de+en) for the FDA onboarding step and dialogs
+
 ### v1.0.0 — April 11, 2026
 
 - Complete UI redesign: modern flat design with dark/light mode support
