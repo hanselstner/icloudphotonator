@@ -131,5 +131,35 @@ def retry_errors(db_path: str | None) -> None:
     click.echo(f"🔄 {reset_count} error files reset for job {latest_job['id']}.")
 
 
+def _early_fda_registration_probe() -> None:
+    """Force a real open(2) on a TCC-protected path before any subprocess
+    or AppleEvent might re-attribute our process. This guarantees the TCC
+    record is staged against com.hanselstner.icloudphotonator (our bundle
+    identity), not against any parent terminal that launched us during dev."""
+    import os
+
+    candidates = [
+        os.path.expanduser("~/Library/Safari/Bookmarks.plist"),
+        os.path.expanduser("~/Library/Mail"),
+        os.path.expanduser("~/Library/Messages"),
+    ]
+    for path in candidates:
+        try:
+            fd = os.open(path, os.O_RDONLY)
+        except (PermissionError, FileNotFoundError, OSError):
+            continue
+        else:
+            try:
+                os.read(fd, 1)
+            finally:
+                os.close(fd)
+            return
+
+
 if __name__ == "__main__":
+    # Skip probe in osxphotos subprocess (argv-marker already rewrote sys.argv
+    # to start with "osxphotos" and called sys.exit; this is belt-and-suspenders
+    # in case the argv-marker logic ever changes).
+    if not (len(sys.argv) >= 1 and sys.argv[0] == "osxphotos"):
+        _early_fda_registration_probe()
     main()

@@ -221,6 +221,12 @@ app = BUNDLE(
         'NSHighResolutionCapable': True,
         'NSAppleEventsUsageDescription': 'iCloudPhotonator needs access to the Photos app to import photos and videos.',
         'NSPhotoLibraryUsageDescription': 'iCloudPhotonator needs access to your photo library to import photos and videos.',
+        'NSDesktopFolderUsageDescription': 'iCloudPhotonator may read files in your Desktop folder during photo import.',
+        'NSDocumentsFolderUsageDescription': 'iCloudPhotonator may read files in your Documents folder during photo import.',
+        'NSDownloadsFolderUsageDescription': 'iCloudPhotonator may read files in your Downloads folder during photo import.',
+        'NSRemovableVolumesUsageDescription': 'iCloudPhotonator may read photos from external drives during import.',
+        'NSNetworkVolumesUsageDescription': 'iCloudPhotonator may read photos from network volumes during import.',
+        'NSSystemAdministrationUsageDescription': 'iCloudPhotonator requires Full Disk Access to read the protected Photos library database.',
         'CFBundleDocumentTypes': [],
     },
 )
