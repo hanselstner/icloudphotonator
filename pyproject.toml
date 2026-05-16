@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "icloudphotonator"
-version = "1.0.2"
+version = "1.0.4"
 description = "Intelligent photo migration helper for Apple Photos on macOS"
 requires-python = ">=3.13"
 dependencies = [
@@ -24,6 +24,7 @@ Issues = "https://github.com/hanselstner/icloudphotonator/issues"
 
 [dependency-groups]
 dev = [
+  "dmgbuild>=1.6.7",
   "pyinstaller>=6.19.0",
   "pytest",
   "pytest-asyncio",

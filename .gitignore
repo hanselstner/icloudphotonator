@@ -40,3 +40,4 @@ __pycache__/
 
 # Test artifacts
 .playwright-mcp/
+.intent/
