@@ -10,11 +10,11 @@
 
 ![Status](https://img.shields.io/badge/Status-Stable-brightgreen)
 
-![Tests](https://img.shields.io/badge/Tests-216%2B%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-266%2B%20passing-brightgreen)
 
 ![Build](https://img.shields.io/badge/Build-PyInstaller-blue)
 
-![Version](https://img.shields.io/badge/Version-v1.0.2-blueviolet)
+![Version](https://img.shields.io/badge/Version-v1.0.4-blueviolet)
 
 **Intelligent photo migration helper for macOS.**
 

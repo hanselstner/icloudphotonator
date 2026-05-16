@@ -10,7 +10,8 @@
 #   5. Build + sign DMG
 #   6. Notarize + staple + validate
 #   7. Upload DMG to GitHub Release (replaces existing asset)
-#   8. Cleanup local artifacts
+#   8. Update landing-page download link in docs/index.html (and README badge), commit + push
+#   9. Cleanup local artifacts
 #
 # Usage: ./scripts/build_release.sh [--version VERSION] [--skip-upload] [--skip-notarize]
 
@@ -83,7 +84,7 @@ fail() { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit 1; }
 # ---------------------------------------------------------------------------
 # 1. Clean build
 # ---------------------------------------------------------------------------
-log "Step 1/8 — Clean PyInstaller build (version $VERSION)"
+log "Step 1/9 — Clean PyInstaller build (version $VERSION)"
 rm -rf dist build
 uv run pyinstaller --noconfirm --clean iCloudPhotonator.spec
 
@@ -92,7 +93,7 @@ uv run pyinstaller --noconfirm --clean iCloudPhotonator.spec
 # ---------------------------------------------------------------------------
 # 2. Dependency audit
 # ---------------------------------------------------------------------------
-log "Step 2/8 — Dependency audit (${#REQUIRED_PACKAGES[@]} packages)"
+log "Step 2/9 — Dependency audit (${#REQUIRED_PACKAGES[@]} packages)"
 EXE_PATH="$APP_PATH/Contents/MacOS/$APP_NAME"
 [[ -f "$EXE_PATH" ]] || fail "Could not locate executable at $EXE_PATH"
 
@@ -126,7 +127,7 @@ log "All ${#REQUIRED_PACKAGES[@]} required packages found in bundle"
 # ---------------------------------------------------------------------------
 # 3. Code signing
 # ---------------------------------------------------------------------------
-log "Step 3/8 — Code signing with '$SIGNING_IDENTITY'"
+log "Step 3/9 — Code signing with '$SIGNING_IDENTITY'"
 
 sign_one() {
   codesign --force --options runtime --timestamp \
@@ -166,7 +167,7 @@ log "App bundle signed and verified"
 # 4. App launch smoke test (after signing — unsigned bundles fail to load
 #    the embedded Python framework on macOS due to Team ID mismatches)
 # ---------------------------------------------------------------------------
-log "Step 4/8 — App launch smoke test"
+log "Step 4/9 — App launch smoke test"
 LAUNCH_LOG="$(mktemp -t icp-launch.XXXXXX)"
 "$APP_PATH/Contents/MacOS/$APP_NAME" >"$LAUNCH_LOG" 2>&1 &
 LAUNCH_PID=$!
@@ -186,7 +187,7 @@ log "App launched cleanly (no import / loader errors in 6s)"
 # ---------------------------------------------------------------------------
 # 5. Build + sign DMG
 # ---------------------------------------------------------------------------
-log "Step 5/8 — Building DMG: $DMG_NAME"
+log "Step 5/9 — Building DMG: $DMG_NAME"
 rm -f "$DMG_PATH"
 uv run dmgbuild \
   -s scripts/dmg_settings.py \
@@ -200,9 +201,9 @@ log "DMG built and signed: $DMG_PATH"
 # 6. Notarize + staple
 # ---------------------------------------------------------------------------
 if (( SKIP_NOTARIZE )); then
-  warn "Step 6/8 — Skipped (--skip-notarize)"
+  warn "Step 6/9 — Skipped (--skip-notarize)"
 else
-  log "Step 6/8 — Notarizing DMG (profile: $NOTARY_PROFILE)"
+  log "Step 6/9 — Notarizing DMG (profile: $NOTARY_PROFILE)"
   xcrun notarytool submit "$DMG_PATH" \
     --keychain-profile "$NOTARY_PROFILE" \
     --wait \
@@ -220,9 +221,9 @@ fi
 # 7. GitHub upload
 # ---------------------------------------------------------------------------
 if (( SKIP_UPLOAD )); then
-  warn "Step 7/8 — Skipped (--skip-upload)"
+  warn "Step 7/9 — Skipped (--skip-upload)"
 else
-  log "Step 7/8 — Resolving GitHub release for tag $VERSION"
+  log "Step 7/9 — Resolving GitHub release for tag $VERSION"
 
   GH_TOKEN="$(printf 'protocol=https\nhost=github.com\n\n' \
     | git credential fill 2>/dev/null \
@@ -272,12 +273,45 @@ except Exception as e:
 fi
 
 # ---------------------------------------------------------------------------
-# 8. Cleanup
+# 8. Update landing-page download link
 # ---------------------------------------------------------------------------
 if (( SKIP_UPLOAD )); then
-  warn "Step 8/8 — Skipped cleanup (--skip-upload set, keeping DMG: $DMG_PATH)"
+  warn "Step 8/9 — Skipped landing-page bump (--skip-upload)"
 else
-  log "Step 8/8 — Cleanup"
+  log "Step 8/9 — Updating landing-page download link to v$VERSION"
+
+  sed -E -i.bak \
+    "s|releases/download/v[0-9]+\.[0-9]+\.[0-9]+/iCloudPhotonator-v[0-9]+\.[0-9]+\.[0-9]+-macos\.dmg|releases/download/v${VERSION}/iCloudPhotonator-v${VERSION}-macos.dmg|g" \
+    docs/index.html
+  rm -f docs/index.html.bak
+
+  sed -E -i.bak \
+    "s|Version-v[0-9]+\.[0-9]+\.[0-9]+-blueviolet|Version-v${VERSION}-blueviolet|g" \
+    README.md
+  rm -f README.md.bak
+
+  grep -q "v$VERSION" docs/index.html \
+    || fail "docs/index.html does not contain v$VERSION after sed replace"
+
+  changed=0
+  git diff --quiet -- docs/index.html README.md || changed=1
+  if (( changed )); then
+    git add docs/index.html README.md
+    git commit -m "docs: bump landing page to v$VERSION"
+    git push origin HEAD
+    log "Landing page bumped to v$VERSION and pushed."
+  else
+    log "Landing page already on v$VERSION — no commit needed."
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 9. Cleanup
+# ---------------------------------------------------------------------------
+if (( SKIP_UPLOAD )); then
+  warn "Step 9/9 — Skipped cleanup (--skip-upload set, keeping DMG: $DMG_PATH)"
+else
+  log "Step 9/9 — Cleanup"
   rm -f "$DMG_PATH"
   log "Removed local DMG: $DMG_PATH"
 fi
