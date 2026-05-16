@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.4] — 2026-05-16
+
+FDA registration UX fix: app now appears reliably in System Settings → Privacy & Security → Full Disk Access on fresh macOS Tahoe installs, without requiring users to manually drag the bundle into the FDA pane via the "+" button.
+
+### Fixed
+- **Full Disk Access UI visibility on macOS Tahoe**: bundle's `Info.plist` now declares the full standard set of `NS*UsageDescription` keys (Desktop, Documents, Downloads, RemovableVolumes, NetworkVolumes, SystemAdministration) in addition to the existing Photos/AppleEvents keys. Without these strings the TCC pane in System Settings does not render an entry, even when the bundle is correctly registered in `TCC.db`. Matches the declarations used by FDA-visible reference apps (Dropbox, BBEdit, etc.).
+- **TCC attribution chain**: added an early `open(2)` probe against TCC-protected paths (`~/Library/Safari/Bookmarks.plist` and fallbacks) that runs in the bundle process before any subprocess or AppleEvent is launched. This guarantees the TCC record is staged against `com.hanselstner.icloudphotonator` (our bundle identity) on every launch, not against the parent terminal when the app is started from a dev environment.
+
+### Notes
+- macOS Tahoe 26.1/26.2 has an Apple-confirmed UI bug (FB21009024, fixed in 26.3 beta) where some bundles fail to render in the FDA pane even with correct TCC.db registration. If v1.0.4 still does not appear after a fresh install on those versions, use the "+" button in System Settings → Privacy & Security → Full Disk Access to add `/Applications/iCloudPhotonator.app` manually. No `tccutil reset` is required when upgrading from v1.0.3.
+
 ## [1.0.3] — 2026-05-15
 
 Stability release addressing persistent import failures reported on production machines (CTO log 2026-05-14). No new features; all fixes target known-bad failure modes.
