@@ -24,6 +24,7 @@ Issues = "https://github.com/hanselstner/icloudphotonator/issues"
 
 [dependency-groups]
 dev = [
+  "dmgbuild>=1.6.7",
   "pyinstaller>=6.19.0",
   "pytest",
   "pytest-asyncio",
