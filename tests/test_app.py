@@ -470,3 +470,63 @@ def test_check_launch_environment_warning_respects_session_flag(monkeypatch) -> 
     app.ICloudPhotonatorApp._check_launch_environment_warning(DummyApp())
 
     dialog_recorder.assert_not_called()
+
+
+def _touch(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x00")
+
+
+def test_has_media_files_empty_folder(tmp_path) -> None:
+    assert app._has_media_files(tmp_path) is False
+
+
+def test_has_media_files_top_level_match(tmp_path) -> None:
+    _touch(tmp_path / "a.jpg")
+    assert app._has_media_files(tmp_path) is True
+
+
+def test_has_media_files_one_level_deep(tmp_path) -> None:
+    _touch(tmp_path / "Sub" / "a.jpg")
+    assert app._has_media_files(tmp_path) is True
+
+
+def test_has_media_files_five_levels_deep(tmp_path) -> None:
+    _touch(tmp_path / "A" / "B" / "C" / "D" / "E" / "a.jpg")
+    assert app._has_media_files(tmp_path) is True
+
+
+def test_has_media_files_skips_hidden_directories(tmp_path) -> None:
+    _touch(tmp_path / ".hidden" / "a.jpg")
+    assert app._has_media_files(tmp_path) is False
+
+
+def test_has_media_files_skips_synology_workdir(tmp_path) -> None:
+    _touch(tmp_path / "@eaDir" / "a.jpg")
+    assert app._has_media_files(tmp_path) is False
+
+
+def test_has_media_files_ignores_sidecar_and_text_files(tmp_path) -> None:
+    _touch(tmp_path / "a.aae")
+    _touch(tmp_path / "Sub" / "notes.txt")
+    _touch(tmp_path / "Sub" / "More" / "extra.AAE")
+    assert app._has_media_files(tmp_path) is False
+
+
+def test_has_media_files_detects_canon_raw(tmp_path) -> None:
+    _touch(tmp_path / "DCIM" / "IMG_0001.cr2")
+    assert app._has_media_files(tmp_path) is True
+
+
+def test_has_media_files_mixed_case_extensions(tmp_path) -> None:
+    _touch(tmp_path / "A.JPG")
+    assert app._has_media_files(tmp_path) is True
+    other = tmp_path / "other"
+    _touch(other / "b.HEIC")
+    assert app._has_media_files(other) is True
+
+
+def test_has_media_files_skips_dotfiles(tmp_path) -> None:
+    _touch(tmp_path / ".a.jpg")
+    _touch(tmp_path / "Sub" / ".b.png")
+    assert app._has_media_files(tmp_path) is False

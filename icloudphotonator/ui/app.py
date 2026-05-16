@@ -31,6 +31,7 @@ from icloudphotonator.importer import find_photo_libraries
 from icloudphotonator.launch_environment import detect_launch_environment
 from icloudphotonator.logging_config import read_log_tail, setup_logging
 from icloudphotonator.persistence import APP_DIR
+from icloudphotonator.scanner import SUPPORTED_FORMATS, MediaType
 from icloudphotonator.settings import ImportSettings
 
 from .bridge import BackendBridge
@@ -123,18 +124,25 @@ def _check_photos_installed() -> bool:
     return Path("/Applications/Photos.app").exists() or Path("/System/Applications/Photos.app").exists()
 
 
-MEDIA_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".heic", ".heif", ".tiff", ".tif", ".bmp", ".gif", ".webp",
-    ".mov", ".mp4", ".m4v", ".avi", ".mkv", ".3gp", ".mts",
-}
+_VALIDATOR_EXTS = SUPPORTED_FORMATS[MediaType.PHOTO] | SUPPORTED_FORMATS[MediaType.VIDEO]
 
 
 def _has_media_files(folder: Path) -> bool:
-    """Return True if *folder* contains at least one media file."""
+    """Return True if *folder* contains at least one media file anywhere in its tree.
+
+    Walks the folder recursively (mirroring ``scanner.Scanner.scan``) so that
+    sources whose media live only in subdirectories pass the pre-flight check.
+    Hidden directories, Synology's ``@eaDir`` workdir and dotfiles are skipped
+    to stay consistent with the scanner. Returns ``False`` on any ``OSError``.
+    """
     try:
-        for entry in folder.iterdir():
-            if entry.is_file() and entry.suffix.lower() in MEDIA_EXTENSIONS:
-                return True
+        for root, dirs, filenames in os.walk(folder):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d != "@eaDir"]
+            for filename in filenames:
+                if filename.startswith("."):
+                    continue
+                if Path(filename).suffix.lower() in _VALIDATOR_EXTS:
+                    return True
     except OSError:
         pass
     return False
