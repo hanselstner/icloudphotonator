@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.5] — 2026-05-17
+
+Source-folder validation fix: the "Choose source folder" pre-flight check no longer rejects collections whose media lives in subfolders, and now accepts the same set of extensions (including RAW) as the importer itself.
+
+### Fixed
+- **Recursive source-folder validation**: the UI pre-flight check (`_has_media_files`) walked only the top level of the chosen folder via `Path.iterdir()`, which rejected sources whose photos lived in nested subfolders (e.g. year/month layouts). Validation now walks the tree with `os.walk`, early-exits on first match, and skips hidden directories, `@eaDir` (Synology) and dotfiles — mirroring the scanner's traversal exactly. Nested subfolder layouts up to arbitrary depth are now accepted.
+- **RAW format parity between validator and scanner**: the validator used a local `MEDIA_EXTENSIONS` constant that had drifted from `scanner.SUPPORTED_FORMATS`. RAW folders (`.cr2`, `.nef`, `.arw`, `.dng`, `.raw`) were silently rejected by the UI even though the scanner would happily import them. The validator now imports `SUPPORTED_FORMATS` directly from `icloudphotonator.scanner`, so photo + video extensions stay in lockstep with the importer.
+
+### Internal
+- Single source of truth for media-extension definitions (`scanner.SUPPORTED_FORMATS`); local `MEDIA_EXTENSIONS` constant removed from `icloudphotonator/ui/app.py`.
+- +10 unit tests covering empty/top-level/nested (1–5 levels) folders, hidden-dir/`@eaDir`/dotfile skipping, sidecar/text-only rejection, Canon RAW detection and mixed-case extensions. Full suite: 266 → 276 passing, 0 regressions.
+
 ## [1.0.4] — 2026-05-16
 
 FDA registration UX fix: app now appears reliably in System Settings → Privacy & Security → Full Disk Access on fresh macOS Tahoe installs, without requiring users to manually drag the bundle into the FDA pane via the "+" button.
