@@ -4,7 +4,7 @@ This file documents non-obvious facts and conventions for AI assistants (and hum
 
 ## Landing Page (GitHub Pages)
 
-- Public URL: https://hanselstner.github.io/icloudphotonator/
+- Public URL: [https://hanselstner.github.io/icloudphotonator/](https://hanselstner.github.io/icloudphotonator/)
 - Source: `main` branch, `/docs` folder (legacy Pages build, no Actions workflow)
 - Single file: `docs/index.html` (no Jekyll, no build step)
 - Download button URL is hardcoded — must be updated on every release to point at the new DMG asset
@@ -41,6 +41,6 @@ Additionally, `icloudphotonator/__main__.py` runs an early FDA-attribution probe
 
 - Coordinator-agent workflow: spec note + delegated implementor agents; no direct edits by Coordinator
 - Auto-commit is enabled in the workspace
-- README.md has a hardcoded version badge (currently shows v1.0.2 — non-blocking, update opportunistically)
-- Tests: `pytest` from repo root, 266+ passing as of v1.0.4
+- README.md version badge is auto-updated by `scripts/build_release.sh` Step 8 on every release
+- Tests: `pytest` from repo root, 276+ passing as of v1.0.5
 - Python: 3.13+
