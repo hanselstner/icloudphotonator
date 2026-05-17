@@ -10,7 +10,7 @@
 
 ![Status](https://img.shields.io/badge/Status-Stable-brightgreen)
 
-![Tests](https://img.shields.io/badge/Tests-266%2B%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-276%2B%20passing-brightgreen)
 
 ![Build](https://img.shields.io/badge/Build-PyInstaller-blue)
 
