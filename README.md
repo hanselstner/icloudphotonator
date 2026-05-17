@@ -14,7 +14,7 @@
 
 ![Build](https://img.shields.io/badge/Build-PyInstaller-blue)
 
-![Version](https://img.shields.io/badge/Version-v1.0.4-blueviolet)
+![Version](https://img.shields.io/badge/Version-v1.0.5-blueviolet)
 
 **Intelligent photo migration helper for macOS.**
 
