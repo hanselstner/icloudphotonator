@@ -223,7 +223,9 @@ fi
 if (( SKIP_UPLOAD )); then
   warn "Step 7/9 — Skipped (--skip-upload)"
 else
-  log "Step 7/9 — Resolving GitHub release for tag $VERSION"
+  TAG="v$VERSION"
+  ASSET_NAME="$APP_NAME-v${VERSION}-macos.dmg"
+  log "Step 7/9 — Resolving GitHub release for tag $TAG"
 
   GH_TOKEN="$(printf 'protocol=https\nhost=github.com\n\n' \
     | git credential fill 2>/dev/null \
@@ -236,7 +238,7 @@ else
   RELEASE_ID="$(curl -fsSL \
     -H "Authorization: token $GH_TOKEN" \
     -H 'Accept: application/vnd.github+json' \
-    "$API/releases/tags/$VERSION" 2>/dev/null \
+    "$API/releases/tags/$TAG" 2>/dev/null \
     | python3 -c 'import json, sys
 try:
     print(json.load(sys.stdin)["id"])
@@ -245,30 +247,44 @@ except Exception as e:
     || true)"
 
   if ! [[ "${RELEASE_ID:-}" =~ ^[0-9]+$ ]]; then
-    fail "Could not resolve release id for tag '$VERSION' on $GITHUB_REPO. Did you create the release first? e.g. 'gh release create $VERSION --notes-file RELEASE_NOTES.md'"
+    log "No release found for tag $TAG — creating it"
+    RELEASE_ID="$(curl -fsSL -X POST \
+      -H "Authorization: token $GH_TOKEN" \
+      -H 'Accept: application/vnd.github+json' \
+      "$API/releases" \
+      -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" \
+      | python3 -c 'import json, sys
+try:
+    print(json.load(sys.stdin)["id"])
+except Exception as e:
+    print(f"# release create parse failed: {e}", file=sys.stderr)' \
+      || true)"
+    [[ "${RELEASE_ID:-}" =~ ^[0-9]+$ ]] \
+      || fail "Could not create release for tag '$TAG' on $GITHUB_REPO"
+    log "Created release $RELEASE_ID for tag $TAG"
   fi
 
-  log "Uploading to GitHub release $RELEASE_ID (tag $VERSION)"
+  log "Uploading to GitHub release $RELEASE_ID (tag $TAG)"
 
   existing_id="$(curl -fsSL \
     -H "Authorization: token $GH_TOKEN" \
     -H 'Accept: application/vnd.github+json' \
     "$API/releases/$RELEASE_ID/assets" \
-    | python3 -c "import json, sys; data=json.load(sys.stdin); name='$DMG_NAME'; print(next((str(a['id']) for a in data if a['name']==name), ''))")"
+    | python3 -c "import json, sys; data=json.load(sys.stdin); name='$ASSET_NAME'; print(next((str(a['id']) for a in data if a['name']==name), ''))")"
 
   if [[ -n "${existing_id:-}" ]]; then
-    log "Deleting previous asset id=$existing_id ($DMG_NAME)"
+    log "Deleting previous asset id=$existing_id ($ASSET_NAME)"
     curl -fsSL -X DELETE \
       -H "Authorization: token $GH_TOKEN" \
       "$API/releases/assets/$existing_id" >/dev/null
   fi
 
-  log "Uploading $DMG_NAME"
+  log "Uploading $DMG_PATH as $ASSET_NAME"
   curl -fsSL -X POST \
     -H "Authorization: token $GH_TOKEN" \
     -H 'Content-Type: application/octet-stream' \
     --data-binary "@$DMG_PATH" \
-    "$UPLOAD/releases/$RELEASE_ID/assets?name=$DMG_NAME" >/dev/null
+    "$UPLOAD/releases/$RELEASE_ID/assets?name=$ASSET_NAME" >/dev/null
   log "Upload complete"
 fi
 
@@ -292,6 +308,21 @@ else
 
   grep -q "v$VERSION" docs/index.html \
     || fail "docs/index.html does not contain v$VERSION after sed replace"
+
+  # Auto-bump Tests badge in README to current pytest collect-only count.
+  TEST_COUNT="$(uv run pytest --collect-only -q 2>/dev/null \
+    | tail -1 | grep -oE '[0-9]+' | head -1)"
+  if ! [[ "${TEST_COUNT:-}" =~ ^[0-9]+$ ]] || (( TEST_COUNT == 0 )); then
+    fail "Could not determine pytest test count (got: '${TEST_COUNT:-}'). Refusing to commit a broken Tests badge."
+  fi
+  log "Updating Tests badge to ${TEST_COUNT}+"
+  sed -E -i.bak \
+    "s|Tests-[0-9]+%2B%20passing|Tests-${TEST_COUNT}%2B%20passing|g" \
+    README.md
+  rm -f README.md.bak
+  matches="$(grep -c "Tests-${TEST_COUNT}%2B%20passing" README.md || true)"
+  [[ "$matches" == "1" ]] \
+    || fail "Tests-badge sanity check failed: expected exactly 1 match for Tests-${TEST_COUNT}%2B%20passing in README.md, got $matches"
 
   changed=0
   git diff --quiet -- docs/index.html README.md || changed=1
