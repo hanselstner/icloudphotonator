@@ -267,6 +267,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 ## Changelog
 
+### v1.0.5 — May 17, 2026
+
+- "Choose source folder" now accepts collections organised into subfolders (year/month, event-named, multi-level — up to arbitrary depth). Previously the picker rejected sources whose media lived only one level down.
+- RAW formats (`.cr2`, `.nef`, `.arw`, `.dng`, `.raw`) are now recognised by the source-folder check, matching what the importer already supported.
+
 ### v1.0.4 — May 16, 2026
 
 - Full Disk Access UI visibility fix on macOS Tahoe: bundle now declares the full standard set of `NS*UsageDescription` keys, so the app reliably appears in System Settings → Privacy & Security → Full Disk Access
